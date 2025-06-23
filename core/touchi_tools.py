@@ -15,9 +15,15 @@ class TouchiTools:
         self.last_usage = {}
         self.semaphore = asyncio.Semaphore(10)
         
-        # 获取表情包目录路径
+        # 获取当前脚本所在目录
         current_dir = os.path.dirname(os.path.abspath(__file__))
+        
+        # 设置表情包目录路径
         self.biaoqing_dir = os.path.join(current_dir, "biaoqing")
+        
+        # 设置与touchi.py一致的输出目录
+        self.output_dir = os.path.join(current_dir, "output")
+        os.makedirs(self.output_dir, exist_ok=True)  # 确保输出目录存在
         
         # 提示消息（包含文字和对应的表情图片）
         self.safe_box_messages = [
@@ -33,7 +39,9 @@ class TouchiTools:
 
     async def get_latest_safe_image(self):
         """获取output文件夹中最新的图片"""
-        output_dir = "output"
+        # 使用与touchi.py一致的输出目录
+        output_dir = self.output_dir
+        
         if not os.path.exists(output_dir):
             return None
             
