@@ -1,0 +1,10 @@
+{
+    
+    "enable_touchi": {
+        "description": "启用功能",
+        "type": "bool",
+        "hint": "启用后，可以通过命令获取关闭则禁用命令。",
+        "obvious_hint": true,
+        "default": true
+    }
+} 
