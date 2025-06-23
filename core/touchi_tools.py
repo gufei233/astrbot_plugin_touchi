@@ -30,6 +30,9 @@ class TouchiTools:
             ("鼠鼠偷吃中...(预计2min)", "touchi.png", 120),  
             ("鼠鼠猛攻中...(预计1min)", "menggong.png", 60)   
         ]
+        
+        # 人物名称列表（用于随机选择）
+        self.character_names = ["威龙", "老黑", "蜂衣", "红狼", "乌鲁鲁", "深蓝", "无名"]
 
     async def fetch_touchi(self):
         async with httpx.AsyncClient(timeout=20.0) as client:
@@ -77,9 +80,13 @@ class TouchiTools:
                     data = await self.fetch_touchi()
                     if data['data']:
                         image_url = data['data'][0]['urls']['original']
+                        
+                        # 随机选择一个角色名称
+                        character = random.choice(self.character_names)
+                        
                         chain = [
                             At(qq=event.get_sender_id()),
-                            Plain("🎉 恭喜开到威龙珍藏美图："),
+                            Plain(f"🎉 恭喜开到{character}珍藏美图："),
                             Image.fromURL(image_url, size='small'),
                         ]
                         self.last_usage[user_id] = now
