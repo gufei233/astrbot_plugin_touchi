@@ -4,3 +4,4 @@
 
 安装方法
 将插件文件夹 astrbot_plugin_touchi 放入 AstrBot 的 data/plugins/ 目录
+![Screenshot_20250623_162718](https://github.com/user-attachments/assets/b2c0cc22-7d12-491e-bbf7-9955da949aa0)
