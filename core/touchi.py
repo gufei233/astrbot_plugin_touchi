@@ -4,18 +4,26 @@ from PIL import Image, ImageDraw, ImageOps
 from datetime import datetime
 import glob
 
-# 创建必要的文件夹
-os.makedirs("items", exist_ok=True)
-os.makedirs("expressions", exist_ok=True)
-os.makedirs("output", exist_ok=True)
+# 获取当前脚本所在目录
+script_dir = os.path.dirname(os.path.abspath(__file__))
+
+# 创建必要的文件夹（使用绝对路径）
+items_dir = os.path.join(script_dir, "items")
+expressions_dir = os.path.join(script_dir, "expressions")
+output_dir = os.path.join(script_dir, "output")
+
+os.makedirs(items_dir, exist_ok=True)
+os.makedirs(expressions_dir, exist_ok=True)
+os.makedirs(output_dir, exist_ok=True)
 
 # 从items文件夹加载物品图片
 def load_items():
     items = []
     valid_extensions = ['.png', '.jpg', '.jpeg', '.gif', '.bmp']
     
-    for filename in os.listdir("items"):
-        if any(filename.lower().endswith(ext) for ext in valid_extensions):
+    for filename in os.listdir(items_dir):
+        file_path = os.path.join(items_dir, filename)
+        if os.path.isfile(file_path) and any(filename.lower().endswith(ext) for ext in valid_extensions):
             parts = os.path.splitext(filename)[0].split('_')
             if len(parts) < 2:
                 level = "purple"
@@ -25,10 +33,9 @@ def load_items():
                 size = parts[1]
             
             width, height = get_size(size)
-            item_path = os.path.join("items", filename)
             
             try:
-                with Image.open(item_path) as img:
+                with Image.open(file_path) as img:
                     img_width, img_height = img.size
                     aspect_ratio = img_width / img_height
             except:
@@ -36,7 +43,7 @@ def load_items():
                 aspect_ratio = width / height
             
             items.append({
-                "path": item_path,
+                "path": file_path,
                 "level": level.lower(),
                 "size": size,
                 "grid_width": width,
@@ -53,11 +60,11 @@ def load_expressions():
     expressions = {}
     valid_extensions = ['.png', '.jpg', '.jpeg', '.gif', '.bmp']
     
-    for filename in os.listdir("expressions"):
-        if any(filename.lower().endswith(ext) for ext in valid_extensions):
+    for filename in os.listdir(expressions_dir):
+        file_path = os.path.join(expressions_dir, filename)
+        if os.path.isfile(file_path) and any(filename.lower().endswith(ext) for ext in valid_extensions):
             expr_name = os.path.splitext(filename)[0]
-            expr_path = os.path.join("expressions", filename)
-            expressions[expr_name] = expr_path
+            expressions[expr_name] = file_path
     
     return expressions
 
@@ -74,7 +81,7 @@ def place_items(items, grid_width, grid_height):
     grid = [[0] * grid_width for _ in range(grid_height)]
     placed = []
     
-        # 按物品大小排序（大物品优先）
+    # 按物品大小排序（大物品优先）
     sorted_items = sorted(items, key=lambda x: x["grid_width"] * x["grid_height"], reverse=True)
     
     # 尝试放置每个物品
@@ -164,7 +171,7 @@ def create_safe_layout(items):
     region_options = [
         (2, 1), (3, 1),(4, 1),(4, 2), (4, 3), (4, 4)
     ]
-        # 设置权重分布：中间高，两边低
+    # 设置权重分布：中间高，两边低
     weights = [2, 3, 3, 3, 1.5, 1]
     
     # 根据权重随机选择区域尺寸
@@ -313,7 +320,7 @@ def get_highest_level(placed_items):
 def cleanup_old_images(keep_recent=1):
     try:
         # 获取output文件夹中的所有图片
-        image_files = glob.glob(os.path.join("output", "*.png"))
+        image_files = glob.glob(os.path.join(output_dir, "*.png"))
         
         # 按修改时间排序（最新的在前）
         image_files.sort(key=os.path.getmtime, reverse=True)
@@ -336,14 +343,16 @@ def main():
     
     if not items:
         print("错误: items文件夹中没有找到任何物品图片！")
-        print("请将物品图片放入items文件夹中，命名格式为: 级别_尺寸_唯一标识.扩展名")
+        print(f"请将物品图片放入此文件夹中: {items_dir}")
+        print("命名格式为: 级别_尺寸_唯一标识.扩展名")
         print("例如: purple_1x1_1.png, red_2x3_2.jpg")
         print("可用级别: purple(紫色), blue(蓝色), gold(金色), red(红色)")
         return
     
     if not expressions:
         print("错误: expressions文件夹中没有找到表情图片！")
-        print("请将表情图片放入expressions文件夹中，命名为: cry.png, happy.png, eat.png")
+        print(f"请将表情图片放入此文件夹中: {expressions_dir}")
+        print("命名为: cry.png, happy.png, eat.png")
         return
     
     # 创建保险箱布局
@@ -391,12 +400,13 @@ def main():
     
     # 保存输出
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    output_path = f"output/safe_{timestamp}.png"
+    output_path = os.path.join(output_dir, f"safe_{timestamp}.png")
     final_img.save(output_path)
+    
+    print(f"已生成保险箱图片: {output_path}")
     
     # 清理旧图片（只保留最新的一张）
     cleanup_old_images()
-    
 
 if __name__ == "__main__":
     main()
