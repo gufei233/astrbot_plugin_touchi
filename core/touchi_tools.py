@@ -20,20 +20,32 @@ class TouchiTools:
         
         # 设置表情包目录路径
         self.biaoqing_dir = os.path.join(current_dir, "biaoqing")
+        os.makedirs(self.biaoqing_dir, exist_ok=True)  # 确保目录存在
         
         # 设置与touchi.py一致的输出目录
         self.output_dir = os.path.join(current_dir, "output")
-        os.makedirs(self.output_dir, exist_ok=True)  # 确保输出目录存在
+        os.makedirs(self.output_dir, exist_ok=True)  # 确保目录存在
         
-        # 提示消息（包含文字和对应的表情图片）
+        # 添加倍率属性
+        self.multiplier = 1.0  # 默认倍率为1.0
+        
+        # 修改提示消息结构，包含原始时间
         self.safe_box_messages = [
-            ("鼠鼠偷吃中...(预计2min)", "touchi.png", 120),  
-            ("鼠鼠猛攻中...(预计1min)", "menggong.png", 60)   
+            ("鼠鼠偷吃中...(预计{}min)", "touchi.png", 120),  # 120秒 = 2分钟
+            ("鼠鼠猛攻中...(预计{}min)", "menggong.png", 60)   # 60秒 = 1分钟
         ]
         
         # 人物名称列表（用于随机选择）
         self.character_names = ["威龙", "老黑", "蜂衣", "红狼", "乌鲁鲁", "深蓝", "无名"]
-
+    
+    # 添加设置倍率的方法
+    def set_multiplier(self, multiplier: float):
+        if multiplier < 0.01 or multiplier > 100:
+            return "倍率必须在0.01到100之间"
+        
+        self.multiplier = multiplier
+        return f"鼠鼠冷却倍率已设置为 {multiplier} 倍！"
+        
     async def fetch_touchi(self):
         async with httpx.AsyncClient(timeout=20.0) as client:
             resp = await client.get("https://api.lolicon.app/setu/v2?r18=0")
@@ -42,20 +54,17 @@ class TouchiTools:
 
     async def get_latest_safe_image(self):
         """获取output文件夹中最新的图片"""
-        # 使用与touchi.py一致的输出目录
-        output_dir = self.output_dir
-        
-        if not os.path.exists(output_dir):
+        if not os.path.exists(self.output_dir):
             return None
             
         # 获取所有png文件并按修改时间排序
-        image_files = [f for f in os.listdir(output_dir) if f.lower().endswith('.png')]
+        image_files = [f for f in os.listdir(self.output_dir) if f.lower().endswith('.png')]
         if not image_files:
             return None
             
         # 按修改时间排序，最新的在前
-        image_files.sort(key=lambda f: os.path.getmtime(os.path.join(output_dir, f)), reverse=True)
-        return os.path.join(output_dir, image_files[0])
+        image_files.sort(key=lambda f: os.path.getmtime(os.path.join(self.output_dir, f)), reverse=True)
+        return os.path.join(self.output_dir, image_files[0])
 
     async def get_touchi(self, event):
         if not self.enable_touchi:
@@ -102,8 +111,18 @@ class TouchiTools:
                 except json.JSONDecodeError as e:
                     yield event.plain_result(f"解析JSON时发生错误: {e}")
         else:  # 偷吃
-            # 随机选择一个提示消息、表情图片和等待时间
-            message, image_name, wait_time = random.choice(self.safe_box_messages)
+            # 随机选择一个提示消息模板、表情图片和原始等待时间
+            message_template, image_name, original_wait_time = random.choice(self.safe_box_messages)
+
+            # 应用倍率计算实际等待时间（除法）
+            actual_wait_time = original_wait_time / self.multiplier
+            
+            # 计算分钟数（四舍五入到整数）
+            minutes = round(actual_wait_time / 60)
+            
+            
+            # 生成实际消息
+            message = message_template.format(minutes)
             
             # 构建表情图片路径
             image_path = os.path.join(self.biaoqing_dir, image_name)
@@ -121,8 +140,8 @@ class TouchiTools:
                 ]
                 yield event.chain_result(chain)
             
-            # 创建异步任务处理生成
-            asyncio.create_task(self.send_delayed_safe_box(event, wait_time))
+            # 创建异步任务处理生成，传入实际等待时间
+            asyncio.create_task(self.send_delayed_safe_box(event, actual_wait_time))
             
             # 更新冷却时间
             self.last_usage[user_id] = now
