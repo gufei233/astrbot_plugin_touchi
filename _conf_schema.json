@@ -1,10 +1,15 @@
 {
-    
     "enable_touchi": {
         "description": "启用功能",
         "type": "bool",
-        "hint": "启用后，可以通过命令获取关闭则禁用命令。",
+        "hint": "禁用全部鼠鼠命令。",
         "obvious_hint": true,
         "default": true
-    }
+    },
+    "enable_beauty_pic": {
+    "description": "是否开启美图功能",
+    "type": "bool",
+    "default": true,
+    "hint": "关闭后只会运行鼠鼠偷吃和猛攻，不会调用API发送美图"
+  }
 } 
