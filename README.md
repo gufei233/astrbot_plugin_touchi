@@ -4,7 +4,7 @@
 
 **使用指令 touchi**
 
-使用自定义戳一戳配合此插件效果更好哦
+使用自定义戳一戳配合此插件效果更好哦  预计更新（指令控制cd）（个人图鉴）
 
 安装方法
 将插件文件夹 astrbot_plugin_touchi 放入 AstrBot 的 data/plugins/ 目录
