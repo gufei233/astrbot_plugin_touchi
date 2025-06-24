@@ -36,11 +36,30 @@ class Main(Star):
         async for result in self.touchi_tools.get_touchi(event):
             yield result
 
-    @command("设置冷却")
-    async def set_touchi_cd(self, event: AstrMessageEvent, cd: int):
-        '''设置冷却'''
-        if not self.enable_touchi:
-            yield event.plain_result("盲盒功能已关闭")
-            return
-        msg = self.touchi_tools.set_cd(cd)
-        yield event.plain_result(msg)
+    @command("鼠鼠冷却倍率")
+    async def set_multiplier(self, event: AstrMessageEvent):
+       """设置偷吃和猛攻的速度倍率"""
+    
+       try:
+           # 使用正确的方法获取纯文本消息 - event.message_str
+           plain_text = event.message_str.strip()
+           args = plain_text.split()
+        
+           if len(args) < 2:
+               yield event.plain_result("请提供倍率值，例如：鼠鼠冷却倍率 0.5")
+               return
+        
+           multiplier = float(args[1])
+           if multiplier < 0.01 or multiplier > 100:
+               yield event.plain_result("倍率必须在0.01到100之间")
+               return
+            
+           # 调用工具类方法设置倍率并获取返回消息
+           msg = self.touchi_tools.set_multiplier(multiplier)
+           yield event.plain_result(msg)
+        
+       except ValueError:
+           yield event.plain_result("倍率必须是数字")
+       except Exception as e:
+           logger.error(f"设置倍率时出错: {e}")
+           yield event.plain_result("设置倍率失败，请重试")  
