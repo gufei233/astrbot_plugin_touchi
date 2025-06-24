@@ -9,8 +9,9 @@ from astrbot.api.message_components import At, Plain, Image
 from astrbot.api import logger
 
 class TouchiTools:
-    def __init__(self, enable_touchi=True, cd=5):
+    def __init__(self, enable_touchi=True,enable_beauty_pic=True, cd=5):
         self.enable_touchi = enable_touchi
+        self.enable_beauty_pic = enable_beauty_pic  # 新增：是否开启美图功能
         self.cd = cd
         self.last_usage = {}
         self.semaphore = asyncio.Semaphore(10)
@@ -83,14 +84,12 @@ class TouchiTools:
         # 生成随机数决定结果类型
         rand_num = random.random()
         
-        if rand_num < 0.3: 
+        if self.enable_beauty_pic and rand_num < 0.3: 
             async with self.semaphore:
                 try:
                     data = await self.fetch_touchi()
                     if data['data']:
                         image_url = data['data'][0]['urls']['original']
-                        
-                        # 随机选择一个角色名称
                         character = random.choice(self.character_names)
                         
                         chain = [
