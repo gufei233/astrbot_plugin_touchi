@@ -19,16 +19,21 @@ class Main(Star):
     def __init__(self, context: Context, config: AstrBotConfig = None):
         super().__init__(context)
         
-        # 保存配置
+               # 保存配置
         self.config = config or {}
         self.enable_touchi = self.config.get("enable_touchi", True)
+        self.enable_beauty_pic = self.config.get("enable_beauty_pic", True)
         
         # 初始化数据文件路径
         data_dir = StarTools.get_data_dir("astrbot_plugin_touchi")
         os.makedirs(data_dir, exist_ok=True)
         
         # 初始化盲盒工具
-        self.touchi_tools = TouchiTools(enable_touchi=self.enable_touchi, cd=5)
+        self.touchi_tools = TouchiTools(
+            enable_touchi=self.enable_touchi,
+            enable_beauty_pic=self.enable_beauty_pic,
+            cd=5
+        )
 
     @command("touchi")
     async def touchi(self, event: AstrMessageEvent):
