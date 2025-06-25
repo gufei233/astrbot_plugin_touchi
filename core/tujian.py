@@ -17,12 +17,13 @@ BACKGROUND_COLOR = (40, 40, 45)  # 深灰背景色
 GRID_LINE_COLOR = (80, 80, 85)    # 网格线颜色
 GRID_TEXT_COLOR = (180, 180, 180) # 网格文字颜色
 ITEM_BORDER_COLOR = (100, 100, 110) # 物品边框颜色
-ITEM_BG_COLORS = {
-    "gold": (210, 175, 55),
-    "red": (200, 60, 60),
-    "purple": (150, 60, 200),
-    "blue": (60, 120, 200),
-    "green": (60, 180, 100)
+
+# 定义物品背景色（带透明度）
+background_colors = {
+    "purple": (50, 43, 97, 80), 
+    "blue": (49, 91, 126, 80), 
+    "gold": (153, 116, 22, 80), 
+    "red": (139, 35, 35, 80)
 }
 
 # 定义等级优先级
@@ -153,9 +154,17 @@ def render_tujian_image(placed_items, grid_width, grid_height, cell_size=100):
         x1 = x0 + placed["width"] * cell_size
         y1 = y0 + placed["height"] * cell_size
         
-        # 绘制物品背景
-        bg_color = ITEM_BG_COLORS.get(item["level"], (128, 128, 128))
-        draw.rectangle([x0, y0, x1, y1], fill=bg_color, outline=ITEM_BORDER_COLOR, width=2)
+        # 获取背景色
+        bg_color = background_colors.get(item["level"], (128, 128, 128, 80))
+        
+        # 创建半透明层
+        overlay = Image.new('RGBA', (placed["width"] * cell_size, placed["height"] * cell_size), bg_color)
+        
+        # 将半透明层粘贴到主图像上
+        tujian_img.paste(overlay, (x0, y0), overlay)
+        
+        # 绘制物品边框
+        draw.rectangle([x0, y0, x1, y1], outline=ITEM_BORDER_COLOR, width=1)
         
         # 添加物品图片
         try:
