@@ -33,7 +33,7 @@ class TouchiTools:
             ("鼠鼠猛攻中...(预计{}min)", "menggong.png", 60)
         ]
         
-        self.character_names = ["威龙", "老黑", "蜂衣", "红狼", "乌鲁鲁", "深蓝", "无名"]
+        self.character_names = ["威龙", "老黑", "蜂医", "红狼", "乌鲁鲁", "深蓝", "无名"]
     
     def set_multiplier(self, multiplier: float):
         if multiplier < 0.01 or multiplier > 100:
