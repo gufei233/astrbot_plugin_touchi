@@ -93,7 +93,7 @@ def place_items(items, grid_width, grid_height):
 
 def create_safe_layout(items):
     selected_items = []
-    level_chances = {"purple": 0.5, "blue": 0.27, "gold": 0.2, "red": 0.03}
+    level_chances = {"purple": 0.42, "blue": 0.25, "gold": 0.28, "red": 0.05}
     
     # 概率选择物品
     for item in items:
@@ -115,7 +115,7 @@ def create_safe_layout(items):
     
     # 区域选择（带权重）
     region_options = [(2, 1), (3, 1), (4, 1), (4, 2), (4, 3), (4, 4)]
-    weights = [2, 3, 3, 3, 1.5, 1]
+    weights = [1, 1.5, 2.5, 2, 2, 1]
     region_width, region_height = random.choices(region_options, weights=weights, k=1)[0]
     
     # 固定放置在左上角
@@ -128,17 +128,24 @@ def render_safe_layout(placed_items, start_x, start_y, region_width, region_heig
     safe_img = Image.new("RGB", (img_size, img_size), (50, 50, 50))
     draw = ImageDraw.Draw(safe_img)
 
-    # 绘制整个网格的线条
+    # 先绘制整个网格的线条
     for i in range(1, grid_size):
         # 垂直线
         draw.line([(i * cell_size, 0), (i * cell_size, img_size)], fill=(80, 80, 80), width=1)
         # 水平线
         draw.line([(0, i * cell_size), (img_size, i * cell_size)], fill=(80, 80, 80), width=1)
 
-    # 定义物品背景色
-    background_colors = {"purple": (50, 43, 97), "blue": (49, 91, 126), "gold": (153, 116, 22), "red": (139, 35, 35)}
-    border_color = (100, 100, 100)
-    border_width = 2
+    # 定义物品背景色（带透明度）
+    background_colors = {
+        "purple": (50, 43, 97, 80), 
+        "blue": (49, 91, 126, 80), 
+        "gold": (153, 116, 22, 80), 
+        "red": (139, 35, 35, 80)
+    }
+
+    # 创建临时透明图层用于绘制物品背景 
+    overlay = Image.new("RGBA", safe_img.size, (0, 0, 0, 0))
+    overlay_draw = ImageDraw.Draw(overlay)
 
     # 放置物品
     for placed in placed_items:
@@ -146,11 +153,11 @@ def render_safe_layout(placed_items, start_x, start_y, region_width, region_heig
         x0, y0 = placed["x"] * cell_size, placed["y"] * cell_size
         x1, y1 = x0 + placed["width"] * cell_size, y0 + placed["height"] * cell_size
         
-        # 获取物品背景色，默认为灰色
-        bg_color = background_colors.get(item["level"], (128, 128, 128))
+        # 获取物品背景色
+        bg_color = background_colors.get(item["level"], (128, 128, 128, 200))
         
-        # 绘制物品背景
-        draw.rectangle([x0, y0, x1, y1], fill=bg_color, outline=border_color, width=border_width)
+        # 绘制物品背景（带透明度）
+        overlay_draw.rectangle([x0, y0, x1, y1], fill=bg_color)
         
         try:
             # 加载并放置物品图片
@@ -159,16 +166,20 @@ def render_safe_layout(placed_items, start_x, start_y, region_width, region_heig
                     item_img = item_img.rotate(90, expand=True)
                 
                 # 计算物品在单元格内的位置
-                inner_width = (placed["width"] * cell_size) - (2 * border_width)
-                inner_height = (placed["height"] * cell_size) - (2 * border_width)
+                inner_width = placed["width"] * cell_size
+                inner_height = placed["height"] * cell_size
                 item_img.thumbnail((inner_width, inner_height), Image.LANCZOS)
                 
-                paste_x = x0 + border_width + (inner_width - item_img.width) // 2
-                paste_y = y0 + border_width + (inner_height - item_img.height) // 2
-                safe_img.paste(item_img, (paste_x, paste_y), item_img)
+                paste_x = x0 + (inner_width - item_img.width) // 2
+                paste_y = y0 + (inner_height - item_img.height) // 2
+                
+                # 将物品图片粘贴到透明图层上
+                overlay.paste(item_img, (int(paste_x), int(paste_y)), item_img)
         except Exception as e:
             print(f"无法加载或粘贴物品图片: {item['path']}, 错误: {e}")
-            
+    
+    # 合并透明图层到底图上
+    safe_img = Image.alpha_composite(safe_img.convert("RGBA"), overlay).convert("RGB")
     return safe_img
 
 def get_highest_level(placed_items):
