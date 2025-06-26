@@ -141,10 +141,10 @@ def render_safe_layout(placed_items, start_x, start_y, region_width, region_heig
 
     # Define item background colors (with transparency)
     background_colors = {
-        "purple": (50, 43, 97, 80), 
-        "blue": (49, 91, 126, 80), 
-        "gold": (153, 116, 22, 80), 
-        "red": (139, 35, 35, 80)
+        "purple": (50, 43, 97, 90), 
+        "blue": (49, 91, 126, 90), 
+        "gold": (153, 116, 22, 90), 
+        "red": (139, 35, 35, 90)
     }
 
     # Create temporary transparent layer for item backgrounds
