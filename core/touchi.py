@@ -13,6 +13,10 @@ os.makedirs(items_dir, exist_ok=True)
 os.makedirs(expressions_dir, exist_ok=True)
 os.makedirs(output_dir, exist_ok=True)
 
+# Define border color
+ITEM_BORDER_COLOR = (100, 100, 110)
+BORDER_WIDTH = 1
+
 def get_size(size_str):
     if 'x' in size_str:
         parts = size_str.split('x')
@@ -48,28 +52,28 @@ def load_expressions():
 def place_items(items, grid_width, grid_height):
     grid = [[0] * grid_width for _ in range(grid_height)]
     placed = []
-    # 按尺寸
+    # Sort by size (biggest first)
     sorted_items = sorted(items, key=lambda x: x["grid_width"] * x["grid_height"], reverse=True)
     
     for item in sorted_items:
-        # 生成方向选项（考虑旋转）
+        # Generate orientation options (consider rotation)
         orientations = [(item["grid_width"], item["grid_height"], False)]
         if item["grid_width"] != item["grid_height"]:
             orientations.append((item["grid_height"], item["grid_width"], True))
         
         placed_success = False
         
-       
+        # Try to place the item
         for y in range(grid_height):
             for x in range(grid_width):
                 for width, height, rotated in orientations:
-                    # 边界检查
+                    # Boundary check
                     if x + width > grid_width or y + height > grid_height:
                         continue
                         
-                    # 检查空间是否可用
+                    # Check if space is available
                     if all(grid[y+i][x+j] == 0 for i in range(height) for j in range(width)):
-                        # 标记空间为已占用
+                        # Mark space as occupied
                         for i in range(height):
                             for j in range(width):
                                 grid[y+i][x+j] = 1
@@ -95,17 +99,17 @@ def create_safe_layout(items):
     selected_items = []
     level_chances = {"purple": 0.42, "blue": 0.25, "gold": 0.28, "red": 0.05}
     
-    # 概率选择物品
+    # Probabilistic item selection
     for item in items:
         if random.random() <= level_chances.get(item["level"], 0):
             selected_items.append(item)
     
-   
+    # Limit number of items
     num_items = random.randint(1, 5)
     if len(selected_items) > num_items:
         selected_items = random.sample(selected_items, num_items)
     elif len(selected_items) < num_items:
-        # 补充紫色物品
+        # Supplement with purple items
         purple_items = [item for item in items if item["level"] == "purple"]
         if purple_items:
             needed = min(num_items - len(selected_items), len(purple_items))
@@ -113,12 +117,12 @@ def create_safe_layout(items):
     
     random.shuffle(selected_items)
     
-    # 区域选择（带权重）
+    # Region selection (with weights)
     region_options = [(2, 1), (3, 1), (4, 1), (4, 2), (4, 3), (4, 4)]
     weights = [1, 1.5, 2.5, 2, 2, 1]
     region_width, region_height = random.choices(region_options, weights=weights, k=1)[0]
     
-    # 固定放置在左上角
+    # Fixed placement in top-left corner
     placed_items = place_items(selected_items, region_width, region_height)
     return placed_items, 0, 0, region_width, region_height
 
@@ -128,14 +132,14 @@ def render_safe_layout(placed_items, start_x, start_y, region_width, region_heig
     safe_img = Image.new("RGB", (img_size, img_size), (50, 50, 50))
     draw = ImageDraw.Draw(safe_img)
 
-    # 先绘制整个网格的线条
+    # Draw grid lines first
     for i in range(1, grid_size):
-        # 垂直线
+        # Vertical lines
         draw.line([(i * cell_size, 0), (i * cell_size, img_size)], fill=(80, 80, 80), width=1)
-        # 水平线
+        # Horizontal lines
         draw.line([(0, i * cell_size), (img_size, i * cell_size)], fill=(80, 80, 80), width=1)
 
-    # 定义物品背景色（带透明度）
+    # Define item background colors (with transparency)
     background_colors = {
         "purple": (50, 43, 97, 80), 
         "blue": (49, 91, 126, 80), 
@@ -143,29 +147,29 @@ def render_safe_layout(placed_items, start_x, start_y, region_width, region_heig
         "red": (139, 35, 35, 80)
     }
 
-    # 创建临时透明图层用于绘制物品背景 
+    # Create temporary transparent layer for item backgrounds
     overlay = Image.new("RGBA", safe_img.size, (0, 0, 0, 0))
     overlay_draw = ImageDraw.Draw(overlay)
 
-    # 放置物品
+    # Place items
     for placed in placed_items:
         item = placed["item"]
         x0, y0 = placed["x"] * cell_size, placed["y"] * cell_size
         x1, y1 = x0 + placed["width"] * cell_size, y0 + placed["height"] * cell_size
         
-        # 获取物品背景色
+        # Get item background color
         bg_color = background_colors.get(item["level"], (128, 128, 128, 200))
         
-        # 绘制物品背景（带透明度）
+        # Draw item background (with transparency)
         overlay_draw.rectangle([x0, y0, x1, y1], fill=bg_color)
         
         try:
-            # 加载并放置物品图片
+            # Load and place item image
             with Image.open(item["path"]).convert("RGBA") as item_img:
                 if placed["rotated"]:
                     item_img = item_img.rotate(90, expand=True)
                 
-                # 计算物品在单元格内的位置
+                # Calculate position within cell
                 inner_width = placed["width"] * cell_size
                 inner_height = placed["height"] * cell_size
                 item_img.thumbnail((inner_width, inner_height), Image.LANCZOS)
@@ -173,12 +177,15 @@ def render_safe_layout(placed_items, start_x, start_y, region_width, region_heig
                 paste_x = x0 + (inner_width - item_img.width) // 2
                 paste_y = y0 + (inner_height - item_img.height) // 2
                 
-                # 将物品图片粘贴到透明图层上
+                # Paste item image onto overlay
                 overlay.paste(item_img, (int(paste_x), int(paste_y)), item_img)
         except Exception as e:
-            print(f"无法加载或粘贴物品图片: {item['path']}, 错误: {e}")
+            print(f"Error loading/pasting item image: {item['path']}, error: {e}")
     
-    # 合并透明图层到底图上
+        # Draw item border (on the main image, not the overlay)
+        draw.rectangle([x0, y0, x1, y1], outline=ITEM_BORDER_COLOR, width=BORDER_WIDTH)
+    
+    # Merge overlay with base image
     safe_img = Image.alpha_composite(safe_img.convert("RGBA"), overlay).convert("RGB")
     return safe_img
 
@@ -194,17 +201,17 @@ def cleanup_old_images(keep_recent=2):
         for old_file in image_files[keep_recent:]:
             os.remove(old_file)
     except Exception as e:
-        print(f"清理旧图片时出错: {e}")
+        print(f"Error cleaning up old images: {e}")
 
 def generate_safe_image():
     """
-    生成一张保险箱图片，并返回图片路径和放置的物品列表。
+    Generate a safe image and return the image path and list of placed items.
     """
     items = load_items()
     expressions = load_expressions()
     
     if not items or not expressions:
-        print("错误: 缺少 items 或 expressions 文件夹中的图片资源。")
+        print("Error: Missing image resources in items or expressions folders.")
         return None, []
     
     placed_items, start_x, start_y, region_width, region_height = create_safe_layout(items)
@@ -224,7 +231,7 @@ def generate_safe_image():
             final_img.paste(expr_img, (0, 0))
             final_img.paste(safe_img, (expr_img.width, 0))
     except Exception as e:
-        print(f"创建最终图片时出错: {e}")
+        print(f"Error creating final image: {e}")
         return None, []
 
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
