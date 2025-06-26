@@ -57,6 +57,17 @@ class Main(Star):
                         PRIMARY KEY (user_id, item_name)
                     );
                 """)
+                # 新增经济系统表
+                await db.execute("""
+                    CREATE TABLE IF NOT EXISTS user_economy (
+                        user_id TEXT PRIMARY KEY,
+                        warehouse_value INTEGER DEFAULT 0,
+                        teqin_level INTEGER DEFAULT 0,
+                        grid_size INTEGER DEFAULT 4,
+                        menggong_active INTEGER DEFAULT 0,
+                        menggong_end_time INTEGER DEFAULT 0
+                    );
+                """)
                 await db.commit()
             logger.info("偷吃插件数据库[collection.db]初始化成功。")
         except Exception as e:
@@ -107,3 +118,21 @@ class Main(Star):
        except Exception as e:
            logger.error(f"设置倍率时出错: {e}")
            yield event.plain_result("设置倍率失败，请重试")
+
+    @command("六套猛攻")
+    async def menggong(self, event: AstrMessageEvent):
+        """六套猛攻功能"""
+        async for result in self.touchi_tools.menggong_attack(event):
+            yield result
+
+    @command("特勤处升级")
+    async def upgrade_teqin(self, event: AstrMessageEvent):
+        """特勤处升级功能"""
+        async for result in self.touchi_tools.upgrade_teqin(event):
+            yield result
+
+    @command("仓库价值")
+    async def warehouse_value(self, event: AstrMessageEvent):
+        """查看仓库价值"""
+        async for result in self.touchi_tools.get_warehouse_info(event):
+            yield result
