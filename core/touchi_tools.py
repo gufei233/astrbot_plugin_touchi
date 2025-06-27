@@ -9,6 +9,8 @@ import aiosqlite  # Import the standard SQLite library
 from astrbot.core.message.message_event_result import MessageChain
 from astrbot.api.message_components import At, Plain, Image
 from astrbot.api import logger
+from astrbot.api.event import AstrMessageEvent
+
 from .touchi import generate_safe_image, get_item_value
 
 class TouchiTools:
@@ -36,12 +38,51 @@ class TouchiTools:
         ]
         
         self.character_names = ["威龙", "老黑", "蜂医", "红狼", "乌鲁鲁", "深蓝", "无名"]
+        
+        # 自动偷吃相关
+        self.auto_touchi_tasks = {}  # 存储用户的自动偷吃任务
+        self.auto_touchi_data = {}   # 存储自动偷吃期间的数据
+        self.nickname_cache = {}     # 缓存群成员昵称，格式: {group_id: {user_id: nickname}}
+        self.cache_expire_time = {}  # 缓存过期时间
     
     def set_multiplier(self, multiplier: float):
         if multiplier < 0.01 or multiplier > 100:
             return "倍率必须在0.01到100之间"
         self.multiplier = multiplier
         return f"鼠鼠冷却倍率已设置为 {multiplier} 倍！"
+    
+    async def _get_group_member_nicknames(self, event: AstrMessageEvent, group_id: str):
+        """获取群成员昵称映射，带缓存机制"""
+        current_time = time.time()
+        
+        # 检查缓存是否有效（10分钟过期）
+        if (group_id in self.nickname_cache and 
+            group_id in self.cache_expire_time and 
+            current_time < self.cache_expire_time[group_id]):
+            return self.nickname_cache[group_id]
+        
+        nickname_map = {}
+        
+        try:
+            # 直接使用event.bot获取群成员列表
+            members = await event.bot.get_group_member_list(group_id=int(group_id))
+            
+            # 创建昵称映射字典
+            for member in members:
+                user_id = str(member['user_id'])
+                nickname = member.get('card') or member.get('nickname') or f"用户{user_id[:6]}"
+                nickname_map[user_id] = nickname
+            
+            # 更新缓存
+            self.nickname_cache[group_id] = nickname_map
+            self.cache_expire_time[group_id] = current_time + 600  # 10分钟后过期
+            
+            logger.info(f"成功获取群{group_id}的{len(nickname_map)}个成员昵称")
+            
+        except Exception as e:
+            logger.error(f"获取群成员信息失败: {str(e)}")
+        
+        return nickname_map
         
     async def fetch_touchi(self):
         async with httpx.AsyncClient(timeout=20.0) as client:
@@ -89,7 +130,7 @@ class TouchiTools:
         try:
             async with aiosqlite.connect(self.db_path) as db:
                 cursor = await db.execute(
-                    "SELECT warehouse_value, teqin_level, grid_size, menggong_active, menggong_end_time FROM user_economy WHERE user_id = ?",
+                    "SELECT warehouse_value, teqin_level, grid_size, menggong_active, menggong_end_time, auto_touchi_active, auto_touchi_start_time FROM user_economy WHERE user_id = ?",
                     (user_id,)
                 )
                 result = await cursor.fetchone()
@@ -99,7 +140,9 @@ class TouchiTools:
                         "teqin_level": result[1],
                         "grid_size": result[2],
                         "menggong_active": result[3],
-                        "menggong_end_time": result[4]
+                        "menggong_end_time": result[4],
+                        "auto_touchi_active": result[5],
+                        "auto_touchi_start_time": result[6]
                     }
                 else:
                     # 创建新用户记录
@@ -113,7 +156,9 @@ class TouchiTools:
                         "teqin_level": 0,
                         "grid_size": 4,
                         "menggong_active": 0,
-                        "menggong_end_time": 0
+                        "menggong_end_time": 0,
+                        "auto_touchi_active": 0,
+                        "auto_touchi_start_time": 0
                     }
         except Exception as e:
             logger.error(f"获取用户经济数据时出错: {e}")
@@ -225,14 +270,14 @@ class TouchiTools:
             
             # 检查仓库价值是否足够
             if economy_data["warehouse_value"] < 3000000:
-                yield event.plain_result(f"仓库价值不足！当前价值: {economy_data['warehouse_value']:,}，需要: 3,000,000")
+                yield event.plain_result(f"哈夫币不足！当前: {economy_data['warehouse_value']:,}，需要: 3,000,000")
                 return
             
             # 检查是否已经在猛攻状态
             current_time = int(time.time())
             if economy_data["menggong_active"] and current_time < economy_data["menggong_end_time"]:
                 remaining_time = economy_data["menggong_end_time"] - current_time
-                yield event.plain_result(f"猛攻状态进行中，剩余时间: {remaining_time // 60}分{remaining_time % 60}秒")
+                yield event.plain_result(f"刘涛状态进行中，剩余时间: {remaining_time // 60}分{remaining_time % 60}秒")
                 return
             
             # 扣除仓库价值并激活猛攻状态
@@ -250,12 +295,12 @@ class TouchiTools:
             if os.path.exists(menggong_image_path):
                 chain = [
                     At(qq=event.get_sender_id()),
-                    Plain("🔥 六套猛攻激活！2分钟内提高红色和金色物品概率，不出现蓝色物品！\n消耗仓库价值: 3,000,000"),
+                    Plain("🔥 六套猛攻激活！2分钟内提高红色和金色物品概率，不出现蓝色物品！\n消耗哈夫币: 3,000,000"),
                     Image.fromFileSystem(menggong_image_path)
                 ]
                 yield event.chain_result(chain)
             else:
-                yield event.plain_result("🔥 六套猛攻激活！2分钟内提高红色和金色物品概率，不出现蓝色物品！\n消耗仓库价值: 3,000,000")
+                yield event.plain_result("🔥 六套猛攻激活！2分钟内提高红色和金色物品概率，不出现蓝色物品！\n消耗哈夫币: 3,000,000")
             
             # 2分钟后自动关闭猛攻状态
             asyncio.create_task(self._disable_menggong_after_delay(user_id, 120))
@@ -300,7 +345,7 @@ class TouchiTools:
             
             # 检查仓库价值是否足够
             if economy_data["warehouse_value"] < upgrade_cost:
-                yield event.plain_result(f"仓库价值不足！当前价值: {economy_data['warehouse_value']:,}，升级到{current_level + 1}级需要: {upgrade_cost:,}")
+                yield event.plain_result(f"哈夫币不足！当前价值: {economy_data['warehouse_value']:,}，升级到{current_level + 1}级需要: {upgrade_cost:,}")
                 return
             
             # 执行升级
@@ -341,12 +386,12 @@ class TouchiTools:
             menggong_status = ""
             if economy_data["menggong_active"] and current_time < economy_data["menggong_end_time"]:
                 remaining_time = economy_data["menggong_end_time"] - current_time
-                menggong_status = f"\n🔥 猛攻状态: 激活中 (剩余 {remaining_time // 60}分{remaining_time % 60}秒)"
+                menggong_status = f"\n🔥 刘涛状态: 激活中 (剩余 {remaining_time // 60}分{remaining_time % 60}秒)"
             else:
-                menggong_status = "\n🔥 猛攻状态: 未激活"
+                menggong_status = "\n🔥 刘涛状态: 未激活"
             
             # 下一级升级费用
-            upgrade_costs = [640000, 3200000, 2560000]
+            upgrade_costs = [960000, 6400000, 25600000]
             next_upgrade_info = ""
             if economy_data["teqin_level"] < 3:
                 next_cost = upgrade_costs[economy_data["teqin_level"]]
@@ -355,7 +400,7 @@ class TouchiTools:
                 next_upgrade_info = "\n📈 已达最高等级"
             
             info_text = (
-                f"💰 仓库价值: {economy_data['warehouse_value']:,}\n"
+                f"💰 哈夫币: {economy_data['warehouse_value']:,}\n"
                 f"🏢 特勤处等级: {economy_data['teqin_level']}级\n"
                 f"📦 格子大小: {economy_data['grid_size']}x{economy_data['grid_size']}"
                 f"{next_upgrade_info}"
@@ -367,3 +412,198 @@ class TouchiTools:
         except Exception as e:
             logger.error(f"查看仓库信息功能出错: {e}")
             yield event.plain_result("查看仓库信息功能出错，请重试")
+
+    async def get_leaderboard(self, event):
+        """获取图鉴数量榜和仓库价值榜前五位"""
+        try:
+            # 获取群ID
+            group_id = event.get_group_id()
+            if not group_id:
+                yield event.plain_result("此功能仅支持群聊使用")
+                return
+            
+            # 获取群成员昵称映射
+            nickname_map = await self._get_group_member_nicknames(event, group_id)
+            
+            async with aiosqlite.connect(self.db_path) as db:
+                # 图鉴数量榜
+                cursor = await db.execute("""
+                    SELECT user_id, COUNT(*) as item_count
+                    FROM user_touchi_collection
+                    GROUP BY user_id
+                    ORDER BY item_count DESC
+                    LIMIT 5
+                """)
+                collection_top = await cursor.fetchall()
+                
+                # 仓库价值榜
+                cursor = await db.execute("""
+                    SELECT user_id, warehouse_value
+                    FROM user_economy
+                    WHERE warehouse_value > 0
+                    ORDER BY warehouse_value DESC
+                    LIMIT 5
+                """)
+                warehouse_top = await cursor.fetchall()
+                
+                # 构建排行榜消息
+                message = "🏆 鼠鼠榜 🏆\n\n"
+                
+                # 图鉴数量榜
+                message += "📚 图鉴数量榜 TOP5:\n"
+                for i, (user_id, count) in enumerate(collection_top, 1):
+                    nickname = nickname_map.get(user_id, f"用户{user_id[:6]}")
+                    message += f"{i}. {nickname} - {count}个物品\n"
+                
+                message += "\n💰 仓库价值榜 TOP5:\n"
+                for i, (user_id, value) in enumerate(warehouse_top, 1):
+                    nickname = nickname_map.get(user_id, f"用户{user_id[:6]}")
+                    message += f"{i}. {nickname} - {value}哈夫币\n"
+                
+                yield event.plain_result(message)
+                
+        except Exception as e:
+            logger.error(f"获取排行榜时出错: {str(e)}")
+            yield event.plain_result("获取排行榜失败，请稍后再试")
+
+    async def start_auto_touchi(self, event):
+        """开启自动偷吃功能"""
+        user_id = event.get_sender_id()
+        
+        try:
+            economy_data = await self.get_user_economy_data(user_id)
+            if not economy_data:
+                yield event.plain_result("获取用户数据失败！")
+                return
+            
+            # 检查是否已经在自动偷吃状态
+            if economy_data["auto_touchi_active"]:
+                start_time = economy_data["auto_touchi_start_time"]
+                elapsed_time = int(time.time()) - start_time
+                yield event.plain_result(f"自动偷吃已经在进行中，已运行 {elapsed_time // 60}分{elapsed_time % 60}秒")
+                return
+            
+            # 开启自动偷吃
+            current_time = int(time.time())
+            async with aiosqlite.connect(self.db_path) as db:
+                await db.execute(
+                    "UPDATE user_economy SET auto_touchi_active = 1, auto_touchi_start_time = ? WHERE user_id = ?",
+                    (current_time, user_id)
+                )
+                await db.commit()
+            
+            # 初始化自动偷吃数据
+            self.auto_touchi_data[user_id] = {
+                "red_items_count": 0,
+                "start_time": current_time
+            }
+            
+            # 启动自动偷吃任务
+            task = asyncio.create_task(self._auto_touchi_loop(user_id, event))
+            self.auto_touchi_tasks[user_id] = task
+            
+            yield event.plain_result("🤖 自动偷吃已开启！\n⏰ 每10分钟自动偷吃一次\n🎯 金红概率降低为原来的1/3\n📊 只记录数据，不输出图片")
+            
+        except Exception as e:
+            logger.error(f"开启自动偷吃时出错: {e}")
+            yield event.plain_result("开启自动偷吃失败，请重试")
+
+    async def stop_auto_touchi(self, event):
+        """关闭自动偷吃功能"""
+        user_id = event.get_sender_id()
+        
+        try:
+            economy_data = await self.get_user_economy_data(user_id)
+            if not economy_data:
+                yield event.plain_result("获取用户数据失败！")
+                return
+            
+            # 检查是否在自动偷吃状态
+            if not economy_data["auto_touchi_active"]:
+                yield event.plain_result("自动偷吃未开启")
+                return
+            
+            # 停止自动偷吃任务
+            if user_id in self.auto_touchi_tasks:
+                self.auto_touchi_tasks[user_id].cancel()
+                del self.auto_touchi_tasks[user_id]
+            
+            # 更新数据库状态
+            async with aiosqlite.connect(self.db_path) as db:
+                await db.execute(
+                    "UPDATE user_economy SET auto_touchi_active = 0, auto_touchi_start_time = 0 WHERE user_id = ?",
+                    (user_id,)
+                )
+                await db.commit()
+            
+            # 统计结果
+            auto_data = self.auto_touchi_data.get(user_id, {})
+            red_count = auto_data.get("red_items_count", 0)
+            start_time = auto_data.get("start_time", int(time.time()))
+            duration = int(time.time()) - start_time
+            
+            # 清理数据
+            if user_id in self.auto_touchi_data:
+                del self.auto_touchi_data[user_id]
+            
+            result_text = (
+                f"🛑 自动偷吃已关闭\n"
+                f"⏱️ 运行时长: {duration // 60}分{duration % 60}秒\n"
+                f"🔴 获得红色物品数量: {red_count}个"
+            )
+            
+            yield event.plain_result(result_text)
+            
+        except Exception as e:
+            logger.error(f"关闭自动偷吃时出错: {e}")
+            yield event.plain_result("关闭自动偷吃失败，请重试")
+
+    async def _auto_touchi_loop(self, user_id, event):
+        """自动偷吃循环任务"""
+        try:
+            while True:
+                await asyncio.sleep(600)  # 10分钟 = 600秒
+                
+                # 检查用户是否还在自动偷吃状态
+                economy_data = await self.get_user_economy_data(user_id)
+                if not economy_data or not economy_data["auto_touchi_active"]:
+                    break
+                
+                # 执行自动偷吃
+                await self._perform_auto_touchi(user_id, economy_data)
+                
+        except asyncio.CancelledError:
+            logger.info(f"用户 {user_id} 的自动偷吃任务被取消")
+        except Exception as e:
+            logger.error(f"自动偷吃循环出错: {e}")
+
+    async def _perform_auto_touchi(self, user_id, economy_data):
+        """执行一次自动偷吃"""
+        try:
+            from .touchi import load_items, create_safe_layout
+            
+            # 加载物品
+            items = load_items()
+            if not items:
+                return
+            
+            # 检查猛攻状态
+            current_time = int(time.time())
+            menggong_mode = economy_data["menggong_active"] and current_time < economy_data["menggong_end_time"]
+            
+            # 创建保险箱布局（自动模式下概率调整）
+            placed_items, _, _, _, _ = create_safe_layout(items, menggong_mode, economy_data["grid_size"], auto_mode=True)
+            
+            if placed_items:
+                # 记录到数据库
+                await self.add_items_to_collection(user_id, placed_items)
+                
+                # 统计红色物品
+                red_items = [item for item in placed_items if item["item"]["level"] == "red"]
+                if user_id in self.auto_touchi_data:
+                    self.auto_touchi_data[user_id]["red_items_count"] += len(red_items)
+                
+                logger.info(f"用户 {user_id} 自动偷吃获得 {len(placed_items)} 个物品，其中红色 {len(red_items)} 个")
+                
+        except Exception as e:
+            logger.error(f"执行自动偷吃时出错: {e}")
