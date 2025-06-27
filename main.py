@@ -62,24 +62,37 @@ class Main(Star):
                     CREATE TABLE IF NOT EXISTS user_economy (
                         user_id TEXT PRIMARY KEY,
                         warehouse_value INTEGER DEFAULT 0,
-                        teqin_level INTEGER DEFAULT 0,
+                        teqin_level INTEGER DEFAULT 1,
                         grid_size INTEGER DEFAULT 4,
                         menggong_active INTEGER DEFAULT 0,
-                        menggong_end_time INTEGER DEFAULT 0
+                        menggong_end_time REAL DEFAULT 0,
+                        auto_touchi_active INTEGER DEFAULT 0,
+                        auto_touchi_start_time REAL DEFAULT 0
                     );
                 """)
+                
+                # 添加新字段（如果不存在）
+                try:
+                    await db.execute("ALTER TABLE user_economy ADD COLUMN auto_touchi_active INTEGER DEFAULT 0")
+                except:
+                    pass  # 字段已存在
+                
+                try:
+                    await db.execute("ALTER TABLE user_economy ADD COLUMN auto_touchi_start_time REAL DEFAULT 0")
+                except:
+                    pass  # 字段已存在
                 await db.commit()
             logger.info("偷吃插件数据库[collection.db]初始化成功。")
         except Exception as e:
             logger.error(f"初始化偷吃插件数据库[collection.db]时出错: {e}")
 
-    @command("touchi")
+    @command("偷吃")
     async def touchi(self, event: AstrMessageEvent):
         """盲盒功能"""
         async for result in self.touchi_tools.get_touchi(event):
             yield result
 
-    @command("tujian")
+    @command("鼠鼠图鉴")
     async def tujian(self, event: AstrMessageEvent):
         """显示用户稀有物品图鉴（金色和红色）"""
         try:
@@ -131,8 +144,51 @@ class Main(Star):
         async for result in self.touchi_tools.upgrade_teqin(event):
             yield result
 
-    @command("仓库价值")
+    @command("鼠鼠仓库")
     async def warehouse_value(self, event: AstrMessageEvent):
         """查看仓库价值"""
         async for result in self.touchi_tools.get_warehouse_info(event):
             yield result
+
+    @command("鼠鼠榜")
+    async def leaderboard(self, event: AstrMessageEvent):
+        """显示图鉴数量榜和仓库价值榜前五位"""
+        async for result in self.touchi_tools.get_leaderboard(event):
+            yield result
+
+    @command("开启自动偷吃")
+    async def start_auto_touchi(self, event: AstrMessageEvent):
+        """开启自动偷吃功能"""
+        async for result in self.touchi_tools.start_auto_touchi(event):
+            yield result
+
+    @command("关闭自动偷吃")
+    async def stop_auto_touchi(self, event: AstrMessageEvent):
+        """关闭自动偷吃功能"""
+        async for result in self.touchi_tools.stop_auto_touchi(event):
+            yield result
+
+    @command("touchi")
+    async def help_command(self, event: AstrMessageEvent):
+        """显示所有可用指令的帮助信息"""
+        help_text = """🐭 鼠鼠偷吃插件 - 指令帮助 🐭
+
+📦 统一全中文指令：
+• 偷吃 - 开启偷吃盲盒，获得随机物品
+• 鼠鼠图鉴 - 查看你收集的稀有物品图鉴
+• 鼠鼠仓库 - 查看仓库总价值和统计信息
+
+⚡ 高级功能：
+• 六套猛攻 - 消耗哈夫币猛攻
+• 特勤处升级 - 升级容量
+• 鼠鼠冷却倍率 [数值] - 设置偷吃冷却倍率(0.01-100)
+
+🏆 排行榜：
+• 鼠鼠榜 - 查看图鉴数量榜和仓库价值榜前五名
+
+🤖 自动功能：
+• 开启自动偷吃 - 启动自动偷吃模式(每10分钟)
+• 关闭自动偷吃 - 停止自动偷吃模式
+
+💡 提示：首次使用请先输入"偷吃"开始游戏！"""
+        yield event.plain_result(help_text)
