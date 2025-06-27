@@ -49,15 +49,15 @@ ITEM_VALUES = {
     "gold_4x3_fuwuqi": 593475,
     
     # Purple items (紫色物品)
-    "purple_1x1_1": 338091, "purple_1x1_2": 824218, "purple_1x1_3": 3643636, "purple_1x1_4": 1936842,
-    "purple_1x1_erhuan": 9500, "purple_1x1_ganraoqi": 10000, "purple_1x1_jiandiebi": 9000,
-    "purple_1x1_junshiqingbao": 11000, "purple_1x1_neicun": 10500, "purple_1x1_rexiangyi": 9200,
-    "purple_1x1_shoubing": 8800, "purple_1x1_shoudian": 8600, "purple_1x1_wandao": 9800,
-    "purple_1x2_dangan": 18000, "purple_1x2_fuliaobao": 16000, "purple_1x2_jiuhu": 17000,
-    "purple_1x2_shizhang": 19000, "purple_1x2_shuihu": 15000, "purple_1x2_tezhonggang": 20000,
-    "purple_1x2_tideng": 16500, "purple_2x1_niuniu": 18000, "purple_2x2_lixinji": 36000,
-    "purple_2x2_shouju": 34000, "purple_2x2_xueyayi": 38000, "purple_2x2_zhuban": 35000,
-    "purple_2x3_dentai": 54000, "purple_3x2_bishou": 54000, "purple_3x2_diandongche": 56000,
+    "purple_1x1_1": 338091, "purple_1x1_2": 824218, "purple_1x1_3": 335980, "purple_1x1_4": 1056413,
+    "purple_1x1_erhuan": 13172, "purple_1x1_ganraoqi": 12079, "purple_1x1_jiandiebi": 21086,
+    "purple_1x1_junshiqingbao": 12554, "purple_1x1_neicun": 26305, "purple_1x1_rexiangyi": 55993,
+    "purple_1x1_shoubing": 34616, "purple_1x1_shoudian": 19861, "purple_1x1_wandao": 24128,
+    "purple_1x2_dangan": 22530, "purple_1x2_fuliaobao": 18685, "purple_1x2_jiuhu": 24732,
+    "purple_1x2_shizhang": 20464, "purple_1x2_shuihu": 32154, "purple_1x2_tezhonggang": 44260,
+    "purple_1x2_tideng": 36019, "purple_2x1_niuniu": 17145, "purple_2x2_lixinji": 60559,
+    "purple_2x2_shouju": 51703, "purple_2x2_xueyayi": 37439, "purple_2x2_zhuban": 47223,
+    "purple_2x3_dentai": 112592, "purple_3x2_bishou": 114755, "purple_3x2_diandongche": 66852,
     
     # Red items (红色物品)
     "red_1x1_1": 4085603, "red_1x1_2": 6775951, "red_1x1_3": 4603790,
@@ -156,12 +156,18 @@ def place_items(items, grid_width, grid_height):
     
     return placed
 
-def create_safe_layout(items, menggong_mode=False, grid_size=4):
+def create_safe_layout(items, menggong_mode=False, grid_size=4, auto_mode=False):
     selected_items = []
     
-    # 根据猛攻模式调整概率
-    if menggong_mode:
-        level_chances = {"purple": 0.45, "blue": 0.0, "gold": 0.4, "red": 0.15}
+    # 根据模式调整概率
+    if auto_mode:
+        # 自动模式：金红概率降低
+        if menggong_mode:
+            level_chances = {"purple": 0.55, "blue": 0.0, "gold": 0.15, "red": 0.033}
+        else:
+            level_chances = {"purple": 0.52, "blue": 0.35, "gold": 0.093, "red": 0.017}
+    elif menggong_mode:
+        level_chances = {"purple": 0.45, "blue": 0.0, "gold": 0.45, "red": 0.10}
     else:
         level_chances = {"purple": 0.42, "blue": 0.25, "gold": 0.28, "red": 0.05}
     
@@ -304,10 +310,23 @@ def generate_safe_image(menggong_mode=False, grid_size=4):
     if not expr_path: return None, []
     
     try:
-        with Image.open(expr_path) as expr_img:
+        with Image.open(expr_path).convert("RGBA") as expr_img:
+            # 移除白边：创建一个没有白边的版本
+            # 转换为RGBA以处理透明度
             expr_img.thumbnail((safe_img.height, safe_img.height), Image.LANCZOS)
-            final_img = Image.new("RGB", (expr_img.width + safe_img.width, safe_img.height), (240, 240, 240))
-            final_img.paste(expr_img, (0, 0))
+            
+            # 创建一个与保险箱背景色相同的背景
+            final_img = Image.new("RGB", (expr_img.width + safe_img.width, safe_img.height), (50, 50, 50))
+            
+            # 如果表情图片有透明通道，使用背景色填充
+            if expr_img.mode == 'RGBA':
+                # 创建一个与背景色相同的底图
+                expr_bg = Image.new("RGB", expr_img.size, (50, 50, 50))
+                expr_bg.paste(expr_img, mask=expr_img.split()[-1])  # 使用alpha通道作为mask
+                final_img.paste(expr_bg, (0, 0))
+            else:
+                final_img.paste(expr_img, (0, 0))
+            
             final_img.paste(safe_img, (expr_img.width, 0))
     except Exception as e:
         print(f"Error creating final image: {e}")
