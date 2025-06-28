@@ -458,7 +458,7 @@ class TouchiTools:
                 menggong_status = "\n🔥 刘涛状态: 未激活"
             
             # 下一级升级费用
-            upgrade_costs = [640000, 3200000, 2560000, 5120000, 10240000]
+             upgrade_costs = [640000, 3200000, 25600000, 64800000, 102400000]
             next_upgrade_info = ""
             if economy_data["teqin_level"] < 5:
                 if economy_data["teqin_level"] < len(upgrade_costs):
