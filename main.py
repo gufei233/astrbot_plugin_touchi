@@ -14,9 +14,9 @@ class Main(Star):
     def info(cls):
         return {
             "name": "astrbot_plugin_touchi",
-            "version": "1.2.0",
+            "version": "2.1.2",
             "description": "这是一个为 AstrBot 开发的鼠鼠偷吃插件，增加了图鉴功能",
-            "author": "touchi & Gemini"
+            "author": "sa1guu"
         }
 
     def __init__(self, context: Context, config: AstrBotConfig = None):
