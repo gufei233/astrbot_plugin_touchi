@@ -8,14 +8,14 @@ from astrbot.api.event.filter import command
 from .core.touchi_tools import TouchiTools
 from .core.tujian import TujianTools
 
-@register("astrbot_plugin_touchi", "touchi", "这是一个为 AstrBot 开发的鼠鼠偷吃插件，增加了图鉴功能", "2.2.2")
+@register("astrbot_plugin_touchi", "touchi", "这是一个为 AstrBot 开发的鼠鼠偷吃插件，增加了图鉴功能", "2.2.3")
 class Main(Star):
     @classmethod
     def info(cls):
         return {
             "name": "astrbot_plugin_touchi",
-            "version": "2.2.2",
-            "description": "这是一个为 AstrBot 开发的鼠鼠偷吃插件，增加了图鉴功能",
+            "version": "2.2.3",
+            "description": "这是一个为 AstrBot 开发的鼠鼠偷吃插件，增加了图鉴特勤处刘涛功能",
             "author": "sa1guu"
         }
 
@@ -62,13 +62,27 @@ class Main(Star):
                     CREATE TABLE IF NOT EXISTS user_economy (
                         user_id TEXT PRIMARY KEY,
                         warehouse_value INTEGER DEFAULT 0,
-                        teqin_level INTEGER DEFAULT 1,
-                        grid_size INTEGER DEFAULT 4,
+                        teqin_level INTEGER DEFAULT 0,
+                        grid_size INTEGER DEFAULT 2,
                         menggong_active INTEGER DEFAULT 0,
                         menggong_end_time REAL DEFAULT 0,
                         auto_touchi_active INTEGER DEFAULT 0,
                         auto_touchi_start_time REAL DEFAULT 0
                     );
+                """)
+                
+                # 新增系统配置表
+                await db.execute("""
+                    CREATE TABLE IF NOT EXISTS system_config (
+                        config_key TEXT PRIMARY KEY,
+                        config_value TEXT NOT NULL
+                    );
+                """)
+                
+                # 初始化基础等级配置
+                await db.execute("""
+                    INSERT OR IGNORE INTO system_config (config_key, config_value) 
+                    VALUES ('base_teqin_level', '0')
                 """)
                 
                 # 添加新字段（如果不存在）
@@ -201,6 +215,36 @@ class Main(Star):
             logger.error(f"清除用户数据时出错: {e}")
             yield event.plain_result("清除数据失败，请重试")
 
+    @command("特勤处等级")
+    async def set_base_teqin_level(self, event: AstrMessageEvent):
+        """设置特勤处基础等级（仅管理员）"""
+        # 检查用户是否为管理员
+        if event.role != "admin":
+            yield event.plain_result("❌ 此指令仅限管理员使用")
+            return
+            
+        try:
+            plain_text = event.message_str.strip()
+            args = plain_text.split()
+            
+            if len(args) < 2:
+                yield event.plain_result("请提供等级值，例如：设置特勤处基础等级 2")
+                return
+        
+            level = int(args[1])
+            if level < 0 or level > 5:
+                yield event.plain_result("特勤处基础等级必须在0到5之间")
+                return
+            
+            result = await self.touchi_tools.set_base_teqin_level(level)
+            yield event.plain_result(result)
+        
+        except ValueError:
+            yield event.plain_result("等级必须是整数")
+        except Exception as e:
+            logger.error(f"设置特勤处基础等级时出错: {e}")
+            yield event.plain_result("设置特勤处基础等级失败，请重试")
+
     @command("touchi")
     async def help_command(self, event: AstrMessageEvent):
         """显示所有可用指令的帮助信息"""
@@ -225,6 +269,7 @@ class Main(Star):
 ⚙️ 管理员功能：
 • 鼠鼠冷却倍率 [数值] - 设置偷吃冷却倍率(0.01-100)
 • 鼠鼠库清除 - 清除所有用户数据
+• 特勤处等级 [等级] - 设置新用户的初始特勤处等级(0-5)
 
 
 💡 提示：
