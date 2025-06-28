@@ -166,16 +166,29 @@ class TouchiTools:
                         "auto_touchi_start_time": result[6]
                     }
                 else:
+                    # 获取系统配置的基础等级
+                    config_cursor = await db.execute(
+                        "SELECT config_value FROM system_config WHERE config_key = 'base_teqin_level'"
+                    )
+                    config_result = await config_cursor.fetchone()
+                    base_level = int(config_result[0]) if config_result else 0
+                    
+                    # 计算对应的grid_size
+                    if base_level == 0:
+                        base_grid_size = 2
+                    else:
+                        base_grid_size = 2 + base_level
+                    
                     # 创建新用户记录
                     await db.execute(
-                        "INSERT INTO user_economy (user_id) VALUES (?)",
-                        (user_id,)
+                        "INSERT INTO user_economy (user_id, teqin_level, grid_size) VALUES (?, ?, ?)",
+                        (user_id, base_level, base_grid_size)
                     )
                     await db.commit()
                     return {
                         "warehouse_value": 0,
-                        "teqin_level": 0,
-                        "grid_size": 4,
+                        "teqin_level": base_level,
+                        "grid_size": base_grid_size,
                         "menggong_active": 0,
                         "menggong_end_time": 0,
                         "auto_touchi_active": 0,
@@ -378,13 +391,20 @@ class TouchiTools:
             
             current_level = economy_data["teqin_level"]
             
-            # 升级费用和等级限制
-            upgrade_costs = [640000, 3200000, 2560000]
-            if current_level >= 3:
-                yield event.plain_result("特勤处已达到最高等级（3级）！")
+            # 升级费用（对应0->1, 1->2, 2->3, 3->4, 4->5级的升级）
+            upgrade_costs = [640000, 3200000, 2560000, 5120000, 10240000]
+            
+            # 等级限制检查
+            if current_level >= 5:
+                yield event.plain_result("特勤处已达到最高等级（5级）！")
                 return
             
-            upgrade_cost = upgrade_costs[current_level]
+            # 获取升级费用
+            if current_level < len(upgrade_costs):
+                upgrade_cost = upgrade_costs[current_level]
+            else:
+                yield event.plain_result("升级费用配置错误！")
+                return
             
             # 检查仓库价值是否足够
             if economy_data["warehouse_value"] < upgrade_cost:
@@ -393,7 +413,11 @@ class TouchiTools:
             
             # 执行升级
             new_level = current_level + 1
-            new_grid_size = 4 + new_level  # 4->5->6->7
+            # 计算新的格子大小：0级=2x2, 1级=3x3, 2级=4x4, 3级=5x5, 4级=6x6, 5级=7x7
+            if new_level == 0:
+                new_grid_size = 2
+            else:
+                new_grid_size = 2 + new_level
             
             async with aiosqlite.connect(self.db_path) as db:
                 await db.execute(
@@ -434,11 +458,14 @@ class TouchiTools:
                 menggong_status = "\n🔥 刘涛状态: 未激活"
             
             # 下一级升级费用
-            upgrade_costs = [960000, 6400000, 25600000]
+            upgrade_costs = [640000, 3200000, 2560000, 5120000, 10240000]
             next_upgrade_info = ""
-            if economy_data["teqin_level"] < 3:
-                next_cost = upgrade_costs[economy_data["teqin_level"]]
-                next_upgrade_info = f"\n📈 下级升级费用: {next_cost:,}"
+            if economy_data["teqin_level"] < 5:
+                if economy_data["teqin_level"] < len(upgrade_costs):
+                    next_cost = upgrade_costs[economy_data["teqin_level"]]
+                    next_upgrade_info = f"\n📈 下级升级费用: {next_cost:,}"
+                else:
+                    next_upgrade_info = "\n📈 升级费用配置错误"
             else:
                 next_upgrade_info = "\n📈 已达最高等级"
             
@@ -679,3 +706,37 @@ class TouchiTools:
                 
         except Exception as e:
             logger.error(f"执行自动偷吃时出错: {e}")
+    
+    async def set_base_teqin_level(self, level: int):
+        """设置特勤处基础等级"""
+        try:
+            # 计算对应的grid_size
+            if level == 0:
+                grid_size = 2  # 0级对应2x2
+            else:
+                grid_size = 2 + level  # 1级=3x3, 2级=4x4, 3级=5x5, 4级=6x6, 5级=7x7
+            
+            async with aiosqlite.connect(self.db_path) as db:
+                # 更新系统配置
+                await db.execute(
+                    "UPDATE system_config SET config_value = ? WHERE config_key = 'base_teqin_level'",
+                    (str(level),)
+                )
+                
+                await db.commit()
+                
+                # 获取当前用户数量
+                cursor = await db.execute("SELECT COUNT(*) FROM user_economy")
+                user_count = (await cursor.fetchone())[0]
+            
+            return (
+                f"✅ 特勤处基础等级设置成功！\n"
+                f"基础等级: {level}级\n"
+                f"对应格子大小: {grid_size}x{grid_size}\n"
+                f"此设置将影响新注册的用户\n"
+                f"当前已有 {user_count} 个用户（不受影响）"
+            )
+            
+        except Exception as e:
+            logger.error(f"设置特勤处基础等级时出错: {e}")
+            return f"❌ 设置失败: {str(e)}"
