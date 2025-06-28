@@ -148,7 +148,7 @@ def load_expressions():
             expressions[os.path.splitext(filename)[0]] = file_path
     return expressions
 
-def place_items(items, grid_width, grid_height):
+def place_items(items, grid_width, grid_height, total_grid_size=2):
     # 优化：使用一维数组代替二维数组提高性能
     grid = [0] * (grid_width * grid_height)
     placed = []
@@ -172,25 +172,37 @@ def place_items(items, grid_width, grid_height):
                 if placed_success:
                     break
                 for width, height, rotated in orientations:
-                    # Boundary check
-                    if x + width > grid_width or y + height > grid_height:
+                    # 新的边界检查：物品左上角必须在放置格子内，但物品整体必须在总格子内
+                    # 左上角在放置格子内的检查（x, y必须在grid_width, grid_height范围内）
+                    if x >= grid_width or y >= grid_height:
+                        continue
+                    
+                    # 物品整体在总格子内的检查
+                    if x + width > total_grid_size or y + height > total_grid_size:
                         continue
                         
-                    # Check if space is available - 优化检查
+                    # Check if space is available - 只检查在放置格子内的部分
                     can_place = True
                     for i in range(height):
                         if not can_place:
                             break
                         for j in range(width):
-                            if grid[(y + i) * grid_width + (x + j)] != 0:
-                                can_place = False
-                                break
+                            # 只检查在放置格子范围内的格子是否被占用
+                            check_x = x + j
+                            check_y = y + i
+                            if check_x < grid_width and check_y < grid_height:
+                                if grid[check_y * grid_width + check_x] != 0:
+                                    can_place = False
+                                    break
                     
                     if can_place:
-                        # Mark space as occupied
+                        # Mark space as occupied - 只标记在放置格子内的部分
                         for i in range(height):
                             for j in range(width):
-                                grid[(y + i) * grid_width + (x + j)] = 1
+                                mark_x = x + j
+                                mark_y = y + i
+                                if mark_x < grid_width and mark_y < grid_height:
+                                    grid[mark_y * grid_width + mark_x] = 1
                         
                         placed.append({
                             "item": item, 
@@ -205,7 +217,7 @@ def place_items(items, grid_width, grid_height):
     
     return placed
 
-def create_safe_layout(items, menggong_mode=False, grid_size=4, auto_mode=False):
+def create_safe_layout(items, menggong_mode=False, grid_size=2, auto_mode=False):
     selected_items = []
     
     # 根据模式调整概率
@@ -255,12 +267,16 @@ def create_safe_layout(items, menggong_mode=False, grid_size=4, auto_mode=False)
     base_options = [(2, 1), (3, 1), (4, 1), (4, 2), (4, 3), (4, 4)]
     
     # 根据grid_size扩展region_options
-    if grid_size == 5:  # 特勤处1级
+    if grid_size == 3:  # 特勤处1级
         region_options = [(w+1, h+1) for w, h in base_options] + base_options
-    elif grid_size == 6:  # 特勤处2级
+    elif grid_size == 4:  # 特勤处2级
         region_options = [(w+2, h+2) for w, h in base_options] + [(w+1, h+1) for w, h in base_options] + base_options
-    elif grid_size == 7:  # 特勤处3级
+    elif grid_size == 5:  # 特勤处3级
         region_options = [(w+3, h+3) for w, h in base_options] + [(w+2, h+2) for w, h in base_options] + [(w+1, h+1) for w, h in base_options] + base_options
+    elif grid_size == 6:  # 特勤处4级
+        region_options = [(w+4, h+4) for w, h in base_options] + [(w+3, h+3) for w, h in base_options] + [(w+2, h+2) for w, h in base_options] + [(w+1, h+1) for w, h in base_options] + base_options
+    elif grid_size == 7:  # 特勤处5级
+        region_options = [(w+5, h+5) for w, h in base_options] + [(w+4, h+4) for w, h in base_options] + [(w+3, h+3) for w, h in base_options] + [(w+2, h+2) for w, h in base_options] + [(w+1, h+1) for w, h in base_options] + base_options
     else:
         region_options = base_options
     
@@ -271,10 +287,10 @@ def create_safe_layout(items, menggong_mode=False, grid_size=4, auto_mode=False)
     region_width, region_height = random.choices(region_options, weights=weights, k=1)[0]
     
     # Fixed placement in top-left corner
-    placed_items = place_items(selected_items, region_width, region_height)
+    placed_items = place_items(selected_items, region_width, region_height, grid_size)
     return placed_items, 0, 0, region_width, region_height
 
-def render_safe_layout(placed_items, start_x, start_y, region_width, region_height, grid_size=4, cell_size=100):
+def render_safe_layout(placed_items, start_x, start_y, region_width, region_height, grid_size=2, cell_size=100):
     img_size = grid_size * cell_size
     safe_img = Image.new("RGB", (img_size, img_size), (50, 50, 50))
     draw = ImageDraw.Draw(safe_img)
@@ -350,7 +366,7 @@ def cleanup_old_images(keep_recent=2):
     except Exception as e:
         print(f"Error cleaning up old images: {e}")
 
-def generate_safe_image(menggong_mode=False, grid_size=4):
+def generate_safe_image(menggong_mode=False, grid_size=2):
     """
     Generate a safe image and return the image path and list of placed items.
     """
