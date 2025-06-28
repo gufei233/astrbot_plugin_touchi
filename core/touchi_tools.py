@@ -20,6 +20,7 @@ class TouchiTools:
         self.cd = cd
         self.db_path = db_path # Path to the database file
         self.last_usage = {}
+        self.waiting_users = {}  # 记录正在等待的用户及其结束时间
         self.semaphore = asyncio.Semaphore(10)
         
         current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -50,6 +51,26 @@ class TouchiTools:
             return "倍率必须在0.01到100之间"
         self.multiplier = multiplier
         return f"鼠鼠冷却倍率已设置为 {multiplier} 倍！"
+    
+    async def clear_user_data(self, user_id=None):
+        """清除用户数据（管理员功能）"""
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                if user_id:
+                    # 清除指定用户数据
+                    await db.execute("DELETE FROM user_touchi_collection WHERE user_id = ?", (user_id,))
+                    await db.execute("DELETE FROM user_economy WHERE user_id = ?", (user_id,))
+                    await db.commit()
+                    return f"已清除用户 {user_id} 的所有数据"
+                else:
+                    # 清除所有用户数据
+                    await db.execute("DELETE FROM user_touchi_collection")
+                    await db.execute("DELETE FROM user_economy")
+                    await db.commit()
+                    return "已清除所有用户数据"
+        except Exception as e:
+            logger.error(f"清除用户数据时出错: {e}")
+            return "清除数据失败，请重试"
     
     async def _get_group_member_nicknames(self, event: AstrMessageEvent, group_id: str):
         """获取群成员昵称映射，带缓存机制"""
@@ -172,10 +193,27 @@ class TouchiTools:
         user_id = event.get_sender_id()
         now = asyncio.get_event_loop().time()
         
-        if user_id in self.last_usage and (now - self.last_usage[user_id]) < self.cd:
-            remaining_time = self.cd - (now - self.last_usage[user_id])
-            yield event.plain_result(f"冷却中，请等待 {remaining_time:.1f} 秒后重试。")
+        # 检查用户是否在自动偷吃状态，如果是则不允许手动偷吃
+        economy_data = await self.get_user_economy_data(user_id)
+        if economy_data and economy_data["auto_touchi_active"]:
+            yield event.plain_result("自动偷吃进行中，无法手动偷吃。请先关闭自动偷吃。")
             return
+        
+        # 检查用户是否在等待状态
+        if user_id in self.waiting_users:
+            end_time = self.waiting_users[user_id]
+            remaining_time = end_time - now
+            if remaining_time > 0:
+                minutes = int(remaining_time // 60)
+                seconds = int(remaining_time % 60)
+                if minutes > 0:
+                    yield event.plain_result(f"鼠鼠还在偷吃中，请等待 {minutes}分{seconds}秒")
+                else:
+                    yield event.plain_result(f"鼠鼠还在偷吃中，请等待 {seconds}秒")
+                return
+            else:
+                # 等待时间已过，清除等待状态
+                del self.waiting_users[user_id]
         
         rand_num = random.random()
         
@@ -192,7 +230,6 @@ class TouchiTools:
                             Plain(f"🎉 恭喜开到{character}珍藏美图："),
                             Image.fromURL(image_url, size='small'),
                         ]
-                        self.last_usage[user_id] = now
                         yield event.chain_result(chain)
                     else:
                         yield event.plain_result("没有找到图。")
@@ -212,15 +249,21 @@ class TouchiTools:
                 chain = [Plain(message), Image.fromFileSystem(image_path)]
                 yield event.chain_result(chain)
             
-            asyncio.create_task(self.send_delayed_safe_box(event, actual_wait_time))
-            self.last_usage[user_id] = now
+            # 记录用户等待结束时间
+            self.waiting_users[user_id] = now + actual_wait_time
+            asyncio.create_task(self.send_delayed_safe_box(event, actual_wait_time, user_id))
 
-    async def send_delayed_safe_box(self, event, wait_time, menggong_mode=False):
+    async def send_delayed_safe_box(self, event, wait_time, user_id=None, menggong_mode=False):
         """异步生成保险箱图片，发送并记录到数据库"""
         try:
             await asyncio.sleep(wait_time)
             
-            user_id = event.get_sender_id()
+            if user_id is None:
+                user_id = event.get_sender_id()
+            
+            # 清除等待状态
+            if user_id in self.waiting_users:
+                del self.waiting_users[user_id]
             economy_data = await self.get_user_economy_data(user_id)
             if not economy_data:
                 await event.send(MessageChain([Plain("🎁获取用户数据失败！")]))
@@ -502,7 +545,11 @@ class TouchiTools:
             task = asyncio.create_task(self._auto_touchi_loop(user_id, event))
             self.auto_touchi_tasks[user_id] = task
             
-            yield event.plain_result("🤖 自动偷吃已开启！\n⏰ 每10分钟自动偷吃一次\n🎯 金红概率降低为原来的1/3\n📊 只记录数据，不输出图片")
+            # 计算实际间隔时间
+            actual_interval = 600 / self.multiplier  # 基础10分钟除以倍率
+            interval_minutes = round(actual_interval / 60, 1)
+            
+            yield event.plain_result(f"🤖 自动偷吃已开启！\n⏰ 每{interval_minutes}分钟自动偷吃\n🎯 金红概率降低\n📊 只记录数据，不输出图片\n⏱️ 4小时后自动停止")
             
         except Exception as e:
             logger.error(f"开启自动偷吃时出错: {e}")
@@ -523,6 +570,16 @@ class TouchiTools:
                 yield event.plain_result("自动偷吃未开启")
                 return
             
+            result_text = await self._stop_auto_touchi_internal(user_id)
+            yield event.plain_result(result_text)
+            
+        except Exception as e:
+            logger.error(f"关闭自动偷吃时出错: {e}")
+            yield event.plain_result("关闭自动偷吃失败，请重试")
+    
+    async def _stop_auto_touchi_internal(self, user_id):
+        """内部停止自动偷吃方法"""
+        try:
             # 停止自动偷吃任务
             if user_id in self.auto_touchi_tasks:
                 self.auto_touchi_tasks[user_id].cancel()
@@ -552,17 +609,32 @@ class TouchiTools:
                 f"🔴 获得红色物品数量: {red_count}个"
             )
             
-            yield event.plain_result(result_text)
+            return result_text
             
         except Exception as e:
-            logger.error(f"关闭自动偷吃时出错: {e}")
-            yield event.plain_result("关闭自动偷吃失败，请重试")
+            logger.error(f"内部停止自动偷吃时出错: {e}")
+            return "关闭自动偷吃失败，请重试"
 
     async def _auto_touchi_loop(self, user_id, event):
         """自动偷吃循环任务"""
         try:
+            start_time = time.time()
+            max_duration = 4 * 3600  # 4小时 = 14400秒
+            base_interval = 600  # 基础间隔10分钟 = 600秒
+            interval = base_interval / self.multiplier  # 应用冷却倍率
+            
             while True:
-                await asyncio.sleep(600)  # 10分钟 = 600秒
+                # 检查是否超过4小时
+                if time.time() - start_time >= max_duration:
+                    logger.info(f"用户 {user_id} 的自动偷吃已运行4小时，自动停止")
+                    await self._stop_auto_touchi_internal(user_id)
+                    try:
+                        await event.send(MessageChain([Plain("🛑 自动偷吃已运行4小时，自动停止")]))
+                    except:
+                        pass  # 发送失败不影响停止逻辑
+                    break
+                
+                await asyncio.sleep(interval)
                 
                 # 检查用户是否还在自动偷吃状态
                 economy_data = await self.get_user_economy_data(user_id)
