@@ -392,7 +392,7 @@ class TouchiTools:
             current_level = economy_data["teqin_level"]
             
             # 升级费用（对应0->1, 1->2, 2->3, 3->4, 4->5级的升级）
-            upgrade_costs = [640000, 3200000, 2560000, 5120000, 10240000]
+            upgrade_costs = [640000, 3200000, 25600000, 64800000, 102400000]
             
             # 等级限制检查
             if current_level >= 5:
