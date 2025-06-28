@@ -74,18 +74,49 @@ ITEM_VALUES = {
     "red_4x1_huatang": 676493, "red_4x3_cipanzhenlie": 1662799, "red_4x3_dongdidianchi": 1409728
 }
 
+# 稀有物品列表 - 概率为原来的三分之一
+RARE_ITEMS = {
+    "gold_1x1_1", "gold_1x1_2", "red_1x1_1", "red_1x1_2", "red_1x1_3", 
+    "red_3x3_huxiji", "gold_3x2_bendishoushi", "purple_1x1_2", "purple_1x1_4","purple_1x1_3", "purple_1x1_1","red_4x3_cipanzhenlie","red_4x3_dongdidianchi","red_3x4_daopian","red_3x3_wanjinleiguan","red_3x3_tanke"
+}
+
+# 超稀有物品列表 - 概率为0.0009%
+ULTRA_RARE_ITEMS = {
+    "red_1x1_xin"
+}
+
 def get_item_value(item_name):
     """获取物品价值"""
     return ITEM_VALUES.get(item_name, 1000)
 
+# 缓存物品列表以提高性能
+_items_cache = None
+_items_cache_time = 0
+CACHE_DURATION = 300  # 5分钟缓存
+
 def load_items():
+    global _items_cache, _items_cache_time
+    import time
+    
+    current_time = time.time()
+    # 检查缓存是否有效
+    if _items_cache is not None and (current_time - _items_cache_time) < CACHE_DURATION:
+        return _items_cache
+    
     items = []
-    valid_extensions = ['.png', '.jpg', '.jpeg', '.gif', '.bmp']
-    for filename in os.listdir(items_dir):
-        file_path = os.path.join(items_dir, filename)
-        if os.path.isfile(file_path) and any(filename.lower().endswith(ext) for ext in valid_extensions):
+    valid_extensions = ('.png', '.jpg', '.jpeg', '.gif', '.bmp')  # 使用元组提高性能
+    
+    try:
+        for filename in os.listdir(items_dir):
+            if not filename.lower().endswith(valid_extensions):
+                continue
+                
+            file_path = os.path.join(items_dir, filename)
+            if not os.path.isfile(file_path):
+                continue
+                
             parts = os.path.splitext(filename)[0].split('_')
-            level = parts[0] if len(parts) >= 2 else "purple"
+            level = parts[0].lower() if len(parts) >= 2 else "purple"
             size = parts[1] if len(parts) >= 2 else "1x1"
             width, height = get_size(size)
             
@@ -94,11 +125,18 @@ def load_items():
             item_value = get_item_value(item_base_name)
             
             items.append({
-                "path": file_path, "level": level.lower(), "size": size,
+                "path": file_path, "level": level, "size": size,
                 "grid_width": width, "grid_height": height,
                 "base_name": item_base_name, "value": item_value,
                 "name": f"{item_base_name} (价值: {item_value:,})"
             })
+    except Exception as e:
+        print(f"Error loading items: {e}")
+        return []
+    
+    # 更新缓存
+    _items_cache = items
+    _items_cache_time = current_time
     return items
 
 def load_expressions():
@@ -111,9 +149,11 @@ def load_expressions():
     return expressions
 
 def place_items(items, grid_width, grid_height):
-    grid = [[0] * grid_width for _ in range(grid_height)]
+    # 优化：使用一维数组代替二维数组提高性能
+    grid = [0] * (grid_width * grid_height)
     placed = []
-    # Sort by size (biggest first)
+    
+    # Sort by size (biggest first) - 优化排序
     sorted_items = sorted(items, key=lambda x: x["grid_width"] * x["grid_height"], reverse=True)
     
     for item in sorted_items:
@@ -124,20 +164,33 @@ def place_items(items, grid_width, grid_height):
         
         placed_success = False
         
-        # Try to place the item
+        # Try to place the item - 优化循环
         for y in range(grid_height):
+            if placed_success:
+                break
             for x in range(grid_width):
+                if placed_success:
+                    break
                 for width, height, rotated in orientations:
                     # Boundary check
                     if x + width > grid_width or y + height > grid_height:
                         continue
                         
-                    # Check if space is available
-                    if all(grid[y+i][x+j] == 0 for i in range(height) for j in range(width)):
+                    # Check if space is available - 优化检查
+                    can_place = True
+                    for i in range(height):
+                        if not can_place:
+                            break
+                        for j in range(width):
+                            if grid[(y + i) * grid_width + (x + j)] != 0:
+                                can_place = False
+                                break
+                    
+                    if can_place:
                         # Mark space as occupied
                         for i in range(height):
                             for j in range(width):
-                                grid[y+i][x+j] = 1
+                                grid[(y + i) * grid_width + (x + j)] = 1
                         
                         placed.append({
                             "item": item, 
@@ -149,10 +202,6 @@ def place_items(items, grid_width, grid_height):
                         })
                         placed_success = True
                         break
-                if placed_success:
-                    break
-            if placed_success:
-                break
     
     return placed
 
@@ -171,9 +220,22 @@ def create_safe_layout(items, menggong_mode=False, grid_size=4, auto_mode=False)
     else:
         level_chances = {"purple": 0.42, "blue": 0.25, "gold": 0.28, "red": 0.05}
     
-    # Probabilistic item selection
+    # Probabilistic item selection with rare item handling
     for item in items:
-        if random.random() <= level_chances.get(item["level"], 0):
+        base_chance = level_chances.get(item["level"], 0)
+        item_name = item["base_name"]
+        
+        # 调整稀有物品概率
+        if item_name in ULTRA_RARE_ITEMS:
+            # 超稀有物品：0.0009%概率
+            final_chance = 0.000009
+        elif item_name in RARE_ITEMS:
+            # 稀有物品：原概率的三分之一
+            final_chance = base_chance / 3
+        else:
+            final_chance = base_chance
+            
+        if random.random() <= final_chance:
             selected_items.append(item)
     
     # Limit number of items
@@ -181,8 +243,8 @@ def create_safe_layout(items, menggong_mode=False, grid_size=4, auto_mode=False)
     if len(selected_items) > num_items:
         selected_items = random.sample(selected_items, num_items)
     elif len(selected_items) < num_items:
-        # Supplement with purple items
-        purple_items = [item for item in items if item["level"] == "purple"]
+        # Supplement with purple items (excluding rare ones)
+        purple_items = [item for item in items if item["level"] == "purple" and item["base_name"] not in RARE_ITEMS]
         if purple_items:
             needed = min(num_items - len(selected_items), len(purple_items))
             selected_items.extend(random.sample(purple_items, needed))
