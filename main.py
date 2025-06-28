@@ -8,13 +8,13 @@ from astrbot.api.event.filter import command
 from .core.touchi_tools import TouchiTools
 from .core.tujian import TujianTools
 
-@register("astrbot_plugin_touchi", "touchi", "这是一个为 AstrBot 开发的鼠鼠偷吃插件，增加了图鉴功能", "1.2.0")
+@register("astrbot_plugin_touchi", "touchi", "这是一个为 AstrBot 开发的鼠鼠偷吃插件，增加了图鉴功能", "2.2.2")
 class Main(Star):
     @classmethod
     def info(cls):
         return {
             "name": "astrbot_plugin_touchi",
-            "version": "2.1.2",
+            "version": "2.2.2",
             "description": "这是一个为 AstrBot 开发的鼠鼠偷吃插件，增加了图鉴功能",
             "author": "sa1guu"
         }
@@ -173,6 +173,34 @@ class Main(Star):
         async for result in self.touchi_tools.stop_auto_touchi(event):
             yield result
 
+    @command("鼠鼠库清除")
+    async def clear_user_data(self, event: AstrMessageEvent):
+        """清除用户数据（仅管理员）"""
+        # 检查用户是否为管理员
+        if event.role != "admin":
+            yield event.plain_result("❌ 此指令仅限管理员使用")
+            return
+        
+        try:
+            plain_text = event.message_str.strip()
+            args = plain_text.split()
+            
+            if len(args) == 1:
+                # 清除所有用户数据
+                result = await self.touchi_tools.clear_user_data()
+                yield event.plain_result(f"⚠️ {result}")
+            elif len(args) == 2:
+                # 清除指定用户数据
+                target_user_id = args[1]
+                result = await self.touchi_tools.clear_user_data(target_user_id)
+                yield event.plain_result(f"⚠️ {result}")
+            else:
+                yield event.plain_result("用法：\n鼠鼠库清除 - 清除所有用户数据\n鼠鼠库清除 [用户ID] - 清除指定用户数据")
+                
+        except Exception as e:
+            logger.error(f"清除用户数据时出错: {e}")
+            yield event.plain_result("清除数据失败，请重试")
+
     @command("touchi")
     async def help_command(self, event: AstrMessageEvent):
         """显示所有可用指令的帮助信息"""
@@ -186,14 +214,20 @@ class Main(Star):
 ⚡ 高级功能：
 • 六套猛攻 - 消耗哈夫币进行猛攻模式
 • 特勤处升级 - 升级特勤处等级，扩大仓库容量
-• 鼠鼠冷却倍率 [数值] - 设置偷吃冷却倍率(0.01-100)
 
 🏆 排行榜：
 • 鼠鼠榜 - 查看图鉴数量榜和仓库价值榜前五名
 
 🤖 自动功能：
-• 开启自动偷吃 - 启动自动偷吃模式(每10分钟)
+• 开启自动偷吃 - 启动自动偷吃模式(每10分钟，最多4小时)
 • 关闭自动偷吃 - 停止自动偷吃模式
 
-💡 提示：首次使用请先输入"偷吃"开始游戏！"""
+⚙️ 管理员功能：
+• 鼠鼠冷却倍率 [数值] - 设置偷吃冷却倍率(0.01-100)
+• 鼠鼠库清除 - 清除所有用户数据
+
+
+💡 提示：
+• 自动偷吃期间无法手动偷吃
+• 首次使用请先输入"偷吃"开始游戏！"""
         yield event.plain_result(help_text)
