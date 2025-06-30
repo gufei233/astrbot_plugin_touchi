@@ -34,8 +34,8 @@ class TouchiTools:
         self.multiplier = 1.0
         
         self.safe_box_messages = [
-            ("鼠鼠偷吃中...(预计{}min)", "touchi.png", 120),
-            ("鼠鼠猛攻中...(预计{}min)", "menggong.png", 60)
+            ("鼠鼠偷吃中...(预计{}min)", ["touchi1.gif", "touchi2.gif"], 120),
+            ("鼠鼠猛攻中...(预计{}min)", "menggong.gif", 60)
         ]
         
         self.character_names = ["威龙", "老黑", "蜂医", "红狼", "乌鲁鲁", "深蓝", "无名"]
@@ -253,7 +253,14 @@ class TouchiTools:
             actual_wait_time = original_wait_time / self.multiplier
             minutes = round(actual_wait_time / 60)
             message = message_template.format(minutes)
-            image_path = os.path.join(self.biaoqing_dir, image_name)
+            
+            # 处理图片名称，如果是列表则随机选择一个
+            if isinstance(image_name, list):
+                selected_image = random.choice(image_name)
+            else:
+                selected_image = image_name
+            
+            image_path = os.path.join(self.biaoqing_dir, selected_image)
             
             if not os.path.exists(image_path):
                 logger.warning(f"表情图片不存在: {image_path}")
@@ -347,7 +354,7 @@ class TouchiTools:
                 await db.commit()
             
             # 发送猛攻图片
-            menggong_image_path = os.path.join(self.biaoqing_dir, "menggong.png")
+            menggong_image_path = os.path.join(self.biaoqing_dir, "menggong.gif")
             if os.path.exists(menggong_image_path):
                 chain = [
                     At(qq=event.get_sender_id()),
