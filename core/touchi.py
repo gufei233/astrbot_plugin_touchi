@@ -27,14 +27,14 @@ def get_size(size_str):
 # 物品价值映射表
 ITEM_VALUES = {
     # Blue items (蓝色物品)
-    "blue_1x1_cha": 1200, "blue_1x1_jidianqi": 1500, "blue_1x1_kele": 800,
-    "blue_1x1_paotengpian": 1000, "blue_1x1_sanjiao": 900, "blue_1x1_shangyewenjian": 1100,
-    "blue_1x1_yinbi": 1300, "blue_1x2_kafeihu": 2400, "blue_1x2_nvlang": 2200,
-    "blue_1x2_wangyuanjing": 2600, "blue_1x2_yandou": 2000, "blue_1x2_zidanlingjian": 2800,
-    "blue_1x3_luyin": 3600, "blue_2x1_qiangxieliangjian": 2400, "blue_2x1_xianwei": 2200,
-    "blue_2x2_meiqiguan": 4800, "blue_2x2_wenduji": 4400, "blue_2x2_wurenji": 4600,
-    "blue_2x2_youqi": 4200, "blue_2x2_zazhi": 4000, "blue_2x3_shuini": 7200,
-    "blue_3x1_guju": 3600, "blue_4x2_tainengban": 9600,
+    "blue_1x1_cha": 10030, "blue_1x1_jidianqi": 10459, "blue_1x1_kele": 12654,
+    "blue_1x1_paotengpian": 9908, "blue_1x1_sanjiao": 11984, "blue_1x1_shangyewenjian": 7812,
+    "blue_1x1_yinbi": 8661, "blue_1x2_kafeihu": 16604, "blue_1x2_nvlang": 15242,
+    "blue_1x2_wangyuanjing": 11389, "blue_1x2_yandou": 15504, "blue_1x2_zidanlingjian": 20405,
+    "blue_1x3_luyin": 28296, "blue_2x1_qiangxieliangjian": 17558, "blue_2x1_xianwei": 25325,
+    "blue_2x2_meiqiguan": 21715, "blue_2x2_wenduji": 17403, "blue_2x2_wurenji": 98589,
+    "blue_2x2_youqi": 21361, "blue_2x2_zazhi": 16694, "blue_2x3_shuini": 50545,
+    "blue_3x1_guju": 19900, "blue_4x2_tainengban": 24434,
     
     # Gold items (金色物品)
     "gold_1x1_1": 1936842, "gold_1x1_2": 1576462, "gold_1x1_chuliqi": 105766,
