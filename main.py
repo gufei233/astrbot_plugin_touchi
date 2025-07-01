@@ -9,7 +9,7 @@ from astrbot.api.event.filter import command
 from .core.touchi_tools import TouchiTools
 from .core.tujian import TujianTools
 
-@register("astrbot_plugin_touchi", "touchi", "这是一个为 AstrBot 开发的鼠鼠偷吃插件，增加了图鉴特勤处鼠鼠榜功能", "2.2.6")
+@register("astrbot_plugin_touchi", "touchi", "这是一个为 AstrBot 开发的鼠鼠偷吃插件，增加了图鉴特勤处鼠鼠榜功能", "2.2.7")
 class Main(Star):
     @classmethod
     def info(cls):
