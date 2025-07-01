@@ -217,7 +217,7 @@ def place_items(items, grid_width, grid_height, total_grid_size=2):
     
     return placed
 
-def create_safe_layout(items, menggong_mode=False, grid_size=2, auto_mode=False):
+def create_safe_layout(items, menggong_mode=False, grid_size=2, auto_mode=False, time_multiplier=1.0):
     selected_items = []
     
     # 根据模式调整概率
@@ -231,6 +231,25 @@ def create_safe_layout(items, menggong_mode=False, grid_size=2, auto_mode=False)
         level_chances = {"purple": 0.45, "blue": 0.0, "gold": 0.45, "red": 0.10}
     else:
         level_chances = {"purple": 0.42, "blue": 0.25, "gold": 0.28, "red": 0.05}
+    
+    # 根据时间倍率调整爆率
+    # time_multiplier范围0.6-1.4，1.0为基准
+    # 时间倍率越大（>1.0）略微提高red和gold爆率
+    # 时间倍率越小（<1.0）下调red和gold爆率
+    if not auto_mode:  # 只在非自动模式下应用时间倍率影响
+        rate_adjustment = (time_multiplier - 1.0) * 0.1  # 调整幅度为±10%
+        
+        # 调整red和gold概率
+        original_red = level_chances["red"]
+        original_gold = level_chances["gold"]
+        
+        level_chances["red"] = max(0.01, original_red + original_red * rate_adjustment)
+        level_chances["gold"] = max(0.05, original_gold + original_gold * rate_adjustment)
+        
+        # 为了保持总概率平衡，相应调整purple概率
+        red_diff = level_chances["red"] - original_red
+        gold_diff = level_chances["gold"] - original_gold
+        level_chances["purple"] = max(0.1, level_chances["purple"] - red_diff - gold_diff)
     
     # Probabilistic item selection with rare item handling
     for item in items:
@@ -251,7 +270,7 @@ def create_safe_layout(items, menggong_mode=False, grid_size=2, auto_mode=False)
             selected_items.append(item)
     
     # Limit number of items
-    num_items = random.randint(1, 5)
+    num_items = random.randint(2, 6)
     if len(selected_items) > num_items:
         selected_items = random.sample(selected_items, num_items)
     elif len(selected_items) < num_items:
@@ -366,7 +385,7 @@ def cleanup_old_images(keep_recent=2):
     except Exception as e:
         print(f"Error cleaning up old images: {e}")
 
-def generate_safe_image(menggong_mode=False, grid_size=2):
+def generate_safe_image(menggong_mode=False, grid_size=2, time_multiplier=1.0):
     """
     Generate a safe image and return the image path and list of placed items.
     """
@@ -377,7 +396,7 @@ def generate_safe_image(menggong_mode=False, grid_size=2):
         print("Error: Missing image resources in items or expressions folders.")
         return None, []
     
-    placed_items, start_x, start_y, region_width, region_height = create_safe_layout(items, menggong_mode, grid_size)
+    placed_items, start_x, start_y, region_width, region_height = create_safe_layout(items, menggong_mode, grid_size, auto_mode=False, time_multiplier=time_multiplier)
     safe_img = render_safe_layout(placed_items, start_x, start_y, region_width, region_height, grid_size)
     highest_level = get_highest_level(placed_items)
     
