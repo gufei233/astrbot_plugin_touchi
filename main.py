@@ -15,7 +15,7 @@ class Main(Star):
     def info(cls):
         return {
             "name": "astrbot_plugin_touchi",
-            "version": "2.2.6",
+            "version": "2.2.7",
             "description": "这是一个为 AstrBot 开发的鼠鼠偷吃插件，增加了图鉴特勤处刘涛功能",
             "author": "sa1guu"
         }
