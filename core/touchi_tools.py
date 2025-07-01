@@ -250,9 +250,24 @@ class TouchiTools:
                     yield event.plain_result(f"获取美图时发生错误: {e}")
         else:
             message_template, image_name, original_wait_time = random.choice(self.safe_box_messages)
-            actual_wait_time = original_wait_time / self.multiplier
-            minutes = round(actual_wait_time / 60)
-            message = message_template.format(minutes)
+            
+            # 添加0.6-1.4倍的时间波动
+            time_multiplier = random.uniform(0.6, 1.4)
+            actual_wait_time = (original_wait_time * time_multiplier) / self.multiplier
+            minutes = int(actual_wait_time // 60)
+            seconds = int(actual_wait_time % 60)
+            
+            # 根据时间长度动态生成时间显示
+            if minutes > 0:
+                time_display = f"{minutes}分{seconds}秒"
+            else:
+                time_display = f"{seconds}秒"
+            
+            # 替换消息模板中的时间占位符
+            message = message_template.replace("(预计{}min)", f"(预计{time_display})")
+            
+            # 将时间倍率传递给后续处理，用于影响爆率
+            setattr(event, '_time_multiplier', time_multiplier)
             
             # 处理图片名称，如果是列表则随机选择一个
             if isinstance(image_name, list):
@@ -271,9 +286,9 @@ class TouchiTools:
             
             # 记录用户等待结束时间
             self.waiting_users[user_id] = now + actual_wait_time
-            asyncio.create_task(self.send_delayed_safe_box(event, actual_wait_time, user_id))
+            asyncio.create_task(self.send_delayed_safe_box(event, actual_wait_time, user_id, time_multiplier=time_multiplier))
 
-    async def send_delayed_safe_box(self, event, wait_time, user_id=None, menggong_mode=False):
+    async def send_delayed_safe_box(self, event, wait_time, user_id=None, menggong_mode=False, time_multiplier=1.0):
         """异步生成保险箱图片，发送并记录到数据库"""
         try:
             await asyncio.sleep(wait_time)
@@ -296,7 +311,7 @@ class TouchiTools:
             
             loop = asyncio.get_running_loop()
             safe_image_path, placed_items = await loop.run_in_executor(
-                None, generate_safe_image, menggong_mode, economy_data["grid_size"]
+                None, generate_safe_image, menggong_mode, economy_data["grid_size"], time_multiplier
             )
             
             if safe_image_path and os.path.exists(safe_image_path):
@@ -340,7 +355,12 @@ class TouchiTools:
             current_time = int(time.time())
             if economy_data["menggong_active"] and current_time < economy_data["menggong_end_time"]:
                 remaining_time = economy_data["menggong_end_time"] - current_time
-                yield event.plain_result(f"刘涛状态进行中，剩余时间: {remaining_time // 60}分{remaining_time % 60}秒")
+                minutes = int(remaining_time // 60)
+                seconds = int(remaining_time % 60)
+                if minutes > 0:
+                    yield event.plain_result(f"刘涛状态进行中，剩余时间: {minutes}分{seconds}秒")
+                else:
+                    yield event.plain_result(f"刘涛状态进行中，剩余时间: {seconds}秒")
                 return
             
             # 扣除仓库价值并激活猛攻状态
@@ -516,7 +536,12 @@ class TouchiTools:
             menggong_status = ""
             if economy_data["menggong_active"] and current_time < economy_data["menggong_end_time"]:
                 remaining_time = economy_data["menggong_end_time"] - current_time
-                menggong_status = f"\n🔥 刘涛状态: 激活中 (剩余 {remaining_time // 60}分{remaining_time % 60}秒)"
+                minutes = int(remaining_time // 60)
+                seconds = int(remaining_time % 60)
+                if minutes > 0:
+                    menggong_status = f"\n🔥 刘涛状态: 激活中 (剩余 {minutes}分{seconds}秒)"
+                else:
+                    menggong_status = f"\n🔥 刘涛状态: 激活中 (剩余 {seconds}秒)"
             else:
                 menggong_status = "\n🔥 刘涛状态: 未激活"
             
@@ -614,7 +639,12 @@ class TouchiTools:
             if economy_data["auto_touchi_active"]:
                 start_time = economy_data["auto_touchi_start_time"]
                 elapsed_time = int(time.time()) - start_time
-                yield event.plain_result(f"自动偷吃已经在进行中，已运行 {elapsed_time // 60}分{elapsed_time % 60}秒")
+                minutes = int(elapsed_time // 60)
+                seconds = int(elapsed_time % 60)
+                if minutes > 0:
+                    yield event.plain_result(f"自动偷吃已经在进行中，已运行 {minutes}分{seconds}秒")
+                else:
+                    yield event.plain_result(f"自动偷吃已经在进行中，已运行 {seconds}秒")
                 return
             
             # 开启自动偷吃
@@ -755,7 +785,7 @@ class TouchiTools:
             menggong_mode = economy_data["menggong_active"] and current_time < economy_data["menggong_end_time"]
             
             # 创建保险箱布局（自动模式下概率调整）
-            placed_items, _, _, _, _ = create_safe_layout(items, menggong_mode, economy_data["grid_size"], auto_mode=True)
+            placed_items, _, _, _, _ = create_safe_layout(items, menggong_mode, economy_data["grid_size"], auto_mode=True, time_multiplier=1.0)
             
             if placed_items:
                 # 记录到数据库
