@@ -34,7 +34,7 @@ class TouchiTools:
         self.multiplier = 1.0
         
         self.safe_box_messages = [
-            ("鼠鼠偷吃中...(预计{}min)", ["touchi1.gif", "touchi2.gif"], 120),
+            ("鼠鼠偷吃中...(预计{}min)", ["touchi1.gif", "touchi2.gif", "touchi3.gif", "touchi4.gif"], 120),
             ("鼠鼠猛攻中...(预计{}min)", "menggong.gif", 60)
         ]
         
@@ -397,6 +397,57 @@ class TouchiTools:
                 return
             
             current_level = economy_data["teqin_level"]
+            current_grid_size = economy_data["grid_size"]
+            
+            # 数据兼容性检查和修复
+            expected_grid_size = 2 + current_level if current_level > 0 else 2
+            
+            # 检测到数据不一致（可能是版本更新导致的问题）
+            if current_grid_size != expected_grid_size:
+                # 如果当前格子大小大于预期（旧版本数据），需要进行兼容性处理
+                if current_grid_size > expected_grid_size:
+                    # 计算应该退回的哈夫币（基于格子大小差异）
+                    level_diff = current_grid_size - expected_grid_size
+                    
+                    # 升级费用（对应0->1, 1->2, 2->3, 3->4, 4->5级的升级）
+                    upgrade_costs = [640000, 3200000, 25600000, 64800000, 102400000]
+                    
+                    # 计算需要退回的费用
+                    refund_amount = 0
+                    for i in range(level_diff):
+                        if current_level + i < len(upgrade_costs):
+                            refund_amount += upgrade_costs[current_level + i]
+                    
+                    # 修复数据并退回哈夫币
+                    async with aiosqlite.connect(self.db_path) as db:
+                        await db.execute(
+                            "UPDATE user_economy SET warehouse_value = warehouse_value + ?, grid_size = ? WHERE user_id = ?",
+                            (refund_amount, expected_grid_size, user_id)
+                        )
+                        await db.commit()
+                    
+                    yield event.plain_result(
+                        f"🔧 检测到数据不一致，已自动修复！\n"
+                        f"格子大小: {current_grid_size}x{current_grid_size} → {expected_grid_size}x{expected_grid_size}\n"
+                        f"退回哈夫币: {refund_amount:,}\n"
+                        f"请重新尝试升级特勤处。"
+                    )
+                    return
+                else:
+                    # 如果当前格子大小小于预期，直接修复到正确大小
+                    async with aiosqlite.connect(self.db_path) as db:
+                        await db.execute(
+                            "UPDATE user_economy SET grid_size = ? WHERE user_id = ?",
+                            (expected_grid_size, user_id)
+                        )
+                        await db.commit()
+                    
+                    yield event.plain_result(
+                        f"🔧 检测到数据不一致，已自动修复！\n"
+                        f"格子大小: {current_grid_size}x{current_grid_size} → {expected_grid_size}x{expected_grid_size}\n"
+                        f"请重新尝试升级特勤处。"
+                    )
+                    return
             
             # 升级费用（对应0->1, 1->2, 2->3, 3->4, 4->5级的升级）
             upgrade_costs = [640000, 3200000, 25600000, 64800000, 102400000]
@@ -421,10 +472,15 @@ class TouchiTools:
             # 执行升级
             new_level = current_level + 1
             # 计算新的格子大小：0级=2x2, 1级=3x3, 2级=4x4, 3级=5x5, 4级=6x6, 5级=7x7
-            if new_level == 0:
-                new_grid_size = 2
-            else:
-                new_grid_size = 2 + new_level
+            new_grid_size = 2 + new_level if new_level > 0 else 2
+            
+            # 二次检查：确保不会出现反向升级
+            if new_grid_size <= current_grid_size:
+                yield event.plain_result(
+                    f"❌ 升级异常：新格子大小({new_grid_size}x{new_grid_size})不大于当前大小({current_grid_size}x{current_grid_size})！\n"
+                    f"请联系管理员检查数据。"
+                )
+                return
             
             async with aiosqlite.connect(self.db_path) as db:
                 await db.execute(
@@ -436,7 +492,7 @@ class TouchiTools:
             yield event.plain_result(
                 f"🎉 特勤处升级成功！\n"
                 f"等级: {current_level} → {new_level}\n"
-                f"格子大小: {economy_data['grid_size']}x{economy_data['grid_size']} → {new_grid_size}x{new_grid_size}\n"
+                f"格子大小: {current_grid_size}x{current_grid_size} → {new_grid_size}x{new_grid_size}\n"
                 f"消耗价值: {upgrade_cost:,}\n"
                 f"剩余价值: {economy_data['warehouse_value'] - upgrade_cost:,}"
             )
