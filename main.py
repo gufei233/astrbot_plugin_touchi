@@ -8,14 +8,15 @@ from astrbot.api import logger, AstrBotConfig
 from astrbot.api.event.filter import command
 from .core.touchi_tools import TouchiTools
 from .core.tujian import TujianTools
+from .mima import MimaTools
 
-@register("astrbot_plugin_touchi", "touchi", "这是一个为 AstrBot 开发的鼠鼠偷吃插件，增加了图鉴特勤处鼠鼠榜功能", "2.3.1")
+@register("astrbot_plugin_touchi", "touchi", "这是一个为 AstrBot 开发的鼠鼠偷吃插件，增加了图鉴特勤处鼠鼠榜功能", "2.2.8")
 class Main(Star):
     @classmethod
     def info(cls):
         return {
             "name": "astrbot_plugin_touchi",
-            "version": "2.3.1",
+            "version": "2.2.8",
             "description": "这是一个为 AstrBot 开发的鼠鼠偷吃插件，增加了图鉴特勤处刘涛功能",
             "author": "sa1guu"
         }
@@ -57,6 +58,7 @@ class Main(Star):
         )
 
         self.tujian_tools = TujianTools(db_path=self.db_path)
+        self.mima_tools = MimaTools()
 
     async def _initialize_database(self):
         """Initializes the database and creates the table if it doesn't exist."""
@@ -446,14 +448,49 @@ class Main(Star):
 • 开启自动偷吃 - 启动自动偷吃模式(每10分钟，最多4小时)
 • 关闭自动偷吃 - 停止自动偷吃模式
 
+🗝️ 密码功能：
+• 鼠鼠密码 - 获取地图密码信息(缓存至晚上12点)
+
 ⚙️ 管理员功能：
 • 鼠鼠冷却倍率 [数值] - 设置偷吃冷却倍率(0.01-100)
 • 鼠鼠库清除 - 清除所有用户数据
 • 特勤处等级 [等级] - 设置新用户的初始特勤处等级(0-5)
 • 鼠鼠限时 - 设置插件使用时间范围限制 如 09:00:00 22:00:00
+• 刷新密码 - 强制刷新密码缓存
 
 更新：配置文件中开设置群聊启用白名单
 💡 提示：
 • 自动偷吃期间无法手动偷吃
 • 首次使用请先输入"偷吃"开始游戏！"""
         yield event.plain_result(help_text)
+
+    @command("鼠鼠密码")
+    async def mima(self, event: AstrMessageEvent):
+        """获取地图密码信息"""
+        allowed, error_msg = self._check_all_permissions(event)
+        if not allowed:
+            if error_msg:
+                yield event.plain_result(error_msg)
+            return
+        
+        try:
+            result = await self.mima_tools.get_mima_info()
+            yield event.plain_result(result)
+        except Exception as e:
+            logger.error(f"获取密码信息时出错: {e}")
+            yield event.plain_result("🐭 获取密码信息时发生错误，请稍后再试")
+
+    @command("刷新密码")
+    async def refresh_mima(self, event: AstrMessageEvent):
+        """强制刷新密码缓存（仅管理员）"""
+        # 检查用户是否为管理员
+        if event.role != "admin":
+            yield event.plain_result("❌ 此指令仅限管理员使用")
+            return
+        
+        try:
+            result = await self.mima_tools.refresh_mima_cache()
+            yield event.plain_result(result)
+        except Exception as e:
+            logger.error(f"刷新密码缓存时出错: {e}")
+            yield event.plain_result("🐭 刷新密码缓存时发生错误，请稍后再试")
