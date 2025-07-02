@@ -60,7 +60,7 @@ class Main(Star):
             try:
                 for package in missing_packages:
                     logger.info(f"正在安装 {package}...")
-                    subprocess.check_call([sys.executable, '-m', 'pip', 'install', package])
+                    subprocess.check_call([sys.executable, '-m', 'pip', 'install', package, '-i', 'https://pypi.tuna.tsinghua.edu.cn/simple'])
                     logger.info(f"{package} 安装成功")
                 
                 # 检查是否需要安装playwright浏览器
@@ -72,7 +72,7 @@ class Main(Star):
                 logger.info("所有依赖安装完成")
             except subprocess.CalledProcessError as e:
                 logger.error(f"依赖安装失败: {e}")
-                logger.error("请手动安装依赖: pip install playwright beautifulsoup4 Pillow httpx aiosqlite")
+                logger.error("请手动安装依赖: pip install playwright beautifulsoup4 Pillow httpx aiosqlite -i https://pypi.tuna.tsinghua.edu.cn/simple")
                 logger.error("然后运行: playwright install chromium")
             except Exception as e:
                 logger.error(f"依赖检查过程中出现错误: {e}")
