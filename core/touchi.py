@@ -557,24 +557,30 @@ def generate_safe_image(menggong_mode=False, grid_size=2, time_multiplier=1.0, g
         return None, []
     
     try:
-        # 加载eating.gif的所有帧
+        # 计算表情图片的目标尺寸，使其与保险箱格子边长对齐
+        # 使用grid_size * cell_size作为表情图片的尺寸，确保与格子线对齐
+        expression_size = grid_size * 100  # cell_size默认为100
+        
+        # 加载eating.gif的所有帧，强制调整为统一尺寸
         eating_frames = []
         with Image.open(eating_path) as eating_gif:
             for frame_idx in range(eating_gif.n_frames):
                 eating_gif.seek(frame_idx)
                 eating_frame = eating_gif.convert("RGBA")
-                eating_frame.thumbnail((safe_frames[0].height, safe_frames[0].height), Image.LANCZOS)
+                # 强制调整为精确的expression_size尺寸，保持居中
+                eating_frame = eating_frame.resize((expression_size, expression_size), Image.LANCZOS)
                 eating_frames.append(eating_frame.copy())
         
-        # 加载最终表情图片
+        # 加载最终表情图片，强制调整为统一尺寸
         with Image.open(final_expr_path).convert("RGBA") as final_expr_img:
-            final_expr_img.thumbnail((safe_frames[0].height, safe_frames[0].height), Image.LANCZOS)
+            # 强制调整为精确的expression_size尺寸，保持居中
+            final_expr_img = final_expr_img.resize((expression_size, expression_size), Image.LANCZOS)
             
             # 为每一帧添加表情图片
             final_frames = []
             for frame_idx, safe_frame in enumerate(safe_frames):
-                # 创建最终图像
-                final_img = Image.new("RGB", (safe_frames[0].height + safe_frame.width, safe_frame.height), (50, 50, 50))
+                # 创建最终图像，使用expression_size作为左侧宽度，确保对齐
+                final_img = Image.new("RGB", (expression_size + safe_frame.width, safe_frame.height), (50, 50, 50))
                 
                 # 选择表情图片：第一帧显示最终表情，从第二帧开始显示eating.gif
                 if frame_idx == 0:
@@ -585,6 +591,7 @@ def generate_safe_image(menggong_mode=False, grid_size=2, time_multiplier=1.0, g
                     eating_frame_idx = (frame_idx - 1) % len(eating_frames)
                     current_expr = eating_frames[eating_frame_idx]
                 
+                # 由于表情图片已强制调整为expression_size，直接放置在左上角
                 # 处理表情图片的透明通道
                 if current_expr.mode == 'RGBA':
                     # 直接粘贴RGBA图片，保持透明效果
@@ -592,8 +599,8 @@ def generate_safe_image(menggong_mode=False, grid_size=2, time_multiplier=1.0, g
                 else:
                     final_img.paste(current_expr, (0, 0))
                 
-                # 添加保险箱帧
-                final_img.paste(safe_frame, (current_expr.width, 0))
+                # 添加保险箱帧，确保右侧紧贴表情图片
+                final_img.paste(safe_frame, (expression_size, 0))
                 
                 # 应用缩放
                 if gif_scale != 1.0:
@@ -623,17 +630,18 @@ def generate_safe_image(menggong_mode=False, grid_size=2, time_multiplier=1.0, g
             static_frame_index = min(animation_complete_frame, len(final_frames) - 1)
             safe_frame = safe_frames[static_frame_index]
             
-            # 创建静态图像
-            static_img = Image.new("RGB", (safe_frames[0].height + safe_frame.width, safe_frame.height), (50, 50, 50))
+            # 创建静态图像，使用expression_size确保对齐
+            static_img = Image.new("RGB", (expression_size + safe_frame.width, safe_frame.height), (50, 50, 50))
             
+            # 由于表情图片已强制调整为expression_size，直接放置在左上角
             # 左侧始终显示最终表情（不是eating.gif）
             if final_expr_img.mode == 'RGBA':
                 static_img.paste(final_expr_img, (0, 0), final_expr_img)
             else:
                 static_img.paste(final_expr_img, (0, 0))
             
-            # 右侧显示所有物品显示完毕的保险箱
-            static_img.paste(safe_frame, (final_expr_img.width, 0))
+            # 右侧显示所有物品显示完毕的保险箱，确保紧贴表情图片
+            static_img.paste(safe_frame, (expression_size, 0))
             
             # 应用缩放
             if gif_scale != 1.0:
