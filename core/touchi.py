@@ -3,6 +3,8 @@ import random
 from PIL import Image, ImageDraw
 from datetime import datetime
 import glob
+import math
+import os
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
 items_dir = os.path.join(script_dir, "items")
@@ -153,8 +155,10 @@ def place_items(items, grid_width, grid_height, total_grid_size=2):
     grid = [0] * (grid_width * grid_height)
     placed = []
     
-    # Sort by size (biggest first) - 优化排序
-    sorted_items = sorted(items, key=lambda x: x["grid_width"] * x["grid_height"], reverse=True)
+    # 修复大物品放置偏向问题：使用随机顺序而不是按尺寸排序
+    # 这样可以给所有物品相等的放置机会，避免大物品优先占用空间
+    sorted_items = items.copy()
+    random.shuffle(sorted_items)
     
     for item in sorted_items:
         # Generate orientation options (consider rotation)
@@ -237,7 +241,7 @@ def create_safe_layout(items, menggong_mode=False, grid_size=2, auto_mode=False,
     # 时间倍率越大（>1.0）略微提高red和gold爆率
     # 时间倍率越小（<1.0）下调red和gold爆率
     if not auto_mode:  # 只在非自动模式下应用时间倍率影响
-        rate_adjustment = (time_multiplier - 1.0) * 0.1  # 调整幅度为±10%
+        rate_adjustment = (time_multiplier - 1.0) * 0.05  # 调整幅度为±10%
         
         # 调整red和gold概率
         original_red = level_chances["red"]
@@ -309,18 +313,31 @@ def create_safe_layout(items, menggong_mode=False, grid_size=2, auto_mode=False,
     placed_items = place_items(selected_items, region_width, region_height, grid_size)
     return placed_items, 0, 0, region_width, region_height
 
-def render_safe_layout(placed_items, start_x, start_y, region_width, region_height, grid_size=2, cell_size=100):
+def render_safe_layout_gif(placed_items, start_x, start_y, region_width, region_height, grid_size=2, cell_size=100):
+    """生成GIF动画，物品按顺序逐个显示，带转圈动画效果"""
     img_size = grid_size * cell_size
-    safe_img = Image.new("RGB", (img_size, img_size), (50, 50, 50))
-    draw = ImageDraw.Draw(safe_img)
-
-    # Draw grid lines first
-    for i in range(1, grid_size):
-        # Vertical lines
-        draw.line([(i * cell_size, 0), (i * cell_size, img_size)], fill=(80, 80, 80), width=1)
-        # Horizontal lines
-        draw.line([(0, i * cell_size), (img_size, i * cell_size)], fill=(80, 80, 80), width=1)
-
+    frames = []
+    
+    # 动画参数
+    frames_per_item = 8  # 每个物品显示时的帧数
+    rotation_frames = 6  # 转圈动画帧数
+    
+    # 根据物品级别设置转圈时长（与render_safe_layout_gif中的函数保持一致）
+    def get_rotation_duration(item_level):
+        duration_map = {
+            "blue": 6,    # 蓝色最短
+            "purple": 8,  # 紫色稍长
+            "gold": 20,    # 金色更长
+            "red": 32     # 红色最长
+        }
+        return duration_map.get(item_level, 6)
+    
+    # 计算总帧数，考虑每个物品的转圈时长
+    max_rotation_duration = max([get_rotation_duration(placed["item"]["level"]) for placed in placed_items], default=8)
+    # 确保总帧数足够显示所有物品，包括最长的转圈动画
+    min_frames_needed = len(placed_items) * frames_per_item + max_rotation_duration
+    total_frames = min_frames_needed + 15  # 最后加15帧静止
+    
     # Define item background colors (with transparency)
     background_colors = {
         "purple": (50, 43, 97, 90), 
@@ -328,48 +345,142 @@ def render_safe_layout(placed_items, start_x, start_y, region_width, region_heig
         "gold": (153, 116, 22, 90), 
         "red": (139, 35, 35, 90)
     }
-
-    # Create temporary transparent layer for item backgrounds
-    overlay = Image.new("RGBA", safe_img.size, (0, 0, 0, 0))
-    overlay_draw = ImageDraw.Draw(overlay)
-
-    # Place items
-    for placed in placed_items:
+    
+    # 预加载所有物品图片
+    item_images = {}
+    for i, placed in enumerate(placed_items):
         item = placed["item"]
-        x0, y0 = placed["x"] * cell_size, placed["y"] * cell_size
-        x1, y1 = x0 + placed["width"] * cell_size, y0 + placed["height"] * cell_size
-        
-        # Get item background color
-        bg_color = background_colors.get(item["level"], (128, 128, 128, 200))
-        
-        # Draw item background (with transparency)
-        overlay_draw.rectangle([x0, y0, x1, y1], fill=bg_color)
-        
         try:
-            # Load and place item image
             with Image.open(item["path"]).convert("RGBA") as item_img:
                 if placed["rotated"]:
                     item_img = item_img.rotate(90, expand=True)
                 
-                # Calculate position within cell
                 inner_width = placed["width"] * cell_size
                 inner_height = placed["height"] * cell_size
                 item_img.thumbnail((inner_width, inner_height), Image.LANCZOS)
-                
-                paste_x = x0 + (inner_width - item_img.width) // 2
-                paste_y = y0 + (inner_height - item_img.height) // 2
-                
-                # Paste item image onto overlay
-                overlay.paste(item_img, (int(paste_x), int(paste_y)), item_img)
+                item_images[i] = item_img.copy()
         except Exception as e:
-            print(f"Error loading/pasting item image: {item['path']}, error: {e}")
+            print(f"Error loading item image: {item['path']}, error: {e}")
+            item_images[i] = None
     
-        # Draw item border (on the main image, not the overlay)
-        draw.rectangle([x0, y0, x1, y1], outline=ITEM_BORDER_COLOR, width=BORDER_WIDTH)
+    # 根据物品级别设置转圈时长
+    def get_rotation_duration(item_level):
+        duration_map = {
+            "blue": 6,    # 蓝色最短
+            "purple": 8,  # 紫色稍长
+            "gold": 20,    # 金色更长
+            "red": 32     # 红色最长
+        }
+        return duration_map.get(item_level, 6)
     
-    # Merge overlay with base image
-    safe_img = Image.alpha_composite(safe_img.convert("RGBA"), overlay).convert("RGB")
-    return safe_img
+    for frame_idx in range(total_frames):
+        # 创建基础图像
+        safe_img = Image.new("RGB", (img_size, img_size), (50, 50, 50))
+        draw = ImageDraw.Draw(safe_img)
+        
+        # 绘制网格线
+        for i in range(1, grid_size):
+            draw.line([(i * cell_size, 0), (i * cell_size, img_size)], fill=(80, 80, 80), width=1)
+            draw.line([(0, i * cell_size), (img_size, i * cell_size)], fill=(80, 80, 80), width=1)
+        
+        # 创建透明层
+        overlay = Image.new("RGBA", safe_img.size, (0, 0, 0, 0))
+        overlay_draw = ImageDraw.Draw(overlay)
+        
+        # 计算当前应该显示的物品数量
+        current_item_count = min(len(placed_items), (frame_idx // frames_per_item) + 1)
+        if frame_idx >= len(placed_items) * frames_per_item:
+            current_item_count = len(placed_items)  # 最后几帧显示所有物品
+        
+        # 绘制未显示物品的黑色阴影线遮罩
+        for i in range(current_item_count, len(placed_items)):
+            placed = placed_items[i]
+            x0, y0 = placed["x"] * cell_size, placed["y"] * cell_size
+            x1, y1 = x0 + placed["width"] * cell_size, y0 + placed["height"] * cell_size
+            
+            # 绘制黑色半透明遮罩
+            overlay_draw.rectangle([x0, y0, x1, y1], fill=(0, 0, 0, 120))
+            
+            # 绘制网格状阴影线纹理
+            for y in range(int(y0), int(y1), 6):
+                overlay_draw.line([(int(x0), y), (int(x1), y)], fill=(0, 0, 0, 120), width=1)
+            for x in range(int(x0), int(x1), 6):
+                overlay_draw.line([(x, int(y0)), (x, int(y1))], fill=(0, 0, 0, 120), width=1)
+        
+        # 绘制已显示的物品
+        for i in range(current_item_count):
+            placed = placed_items[i]
+            item = placed["item"]
+            x0, y0 = placed["x"] * cell_size, placed["y"] * cell_size
+            x1, y1 = x0 + placed["width"] * cell_size, y0 + placed["height"] * cell_size
+            
+            # 获取物品背景色
+            bg_color = background_colors.get(item["level"], (128, 128, 128, 200))
+            
+            # 为每个物品添加转圈动画效果，根据级别调整时长
+            item_rotation_duration = get_rotation_duration(item["level"])
+            
+            # 计算该物品开始显示的帧数
+            item_start_frame = i * frames_per_item
+            
+            # 判断是否在转圈动画期间 - 只有当前正在显示的物品才转圈
+            is_rotating = (frame_idx >= item_start_frame and 
+                          frame_idx < item_start_frame + item_rotation_duration and
+                          i == current_item_count - 1)  # 确保只有当前物品转圈
+            
+            if is_rotating:
+                # 转圈动画期间，先绘制阴影遮罩，再绘制转圈效果
+                # 绘制黑色半透明遮罩
+                overlay_draw.rectangle([x0, y0, x1, y1], fill=(0, 0, 0, 120))
+                
+                # 绘制网格状阴影线纹理
+                for y in range(int(y0), int(y1), 6):
+                    overlay_draw.line([(int(x0), y), (int(x1), y)], fill=(0, 0, 0, 120), width=1)
+                for x in range(int(x0), int(x1), 6):
+                    overlay_draw.line([(x, int(y0)), (x, int(y1))], fill=(0, 0, 0, 120), width=1)
+                
+                # 计算转圈动画参数
+                rotation_frame = (frame_idx - item_start_frame) % item_rotation_duration
+                # 增加转动速度倍数，让线条转动更快（3倍速度）
+                rotation_angle = (rotation_frame * 360 * 3 // item_rotation_duration) % 360
+                
+                # 创建带旋转效果的背景
+                center_x = (x0 + x1) // 2
+                center_y = (y0 + y1) // 2
+                radius = min(placed["width"], placed["height"]) * cell_size // 4
+                
+                # 绘制旋转的弧线（显示在遮罩上方）
+                arc_length = 150  # 弧线长度（度数）
+                start_angle = rotation_angle
+                end_angle = rotation_angle + arc_length
+                
+                # 计算弧线的边界框
+                bbox = [center_x - radius, center_y - radius, 
+                       center_x + radius, center_y + radius]
+                
+                # 绘制弧线
+                overlay_draw.arc(bbox, start_angle, end_angle, 
+                                fill=(255, 255, 255, 220), width=3)
+            else:
+                # 转圈动画结束后，显示物品背景色和图片
+                # 绘制物品背景
+                overlay_draw.rectangle([x0, y0, x1, y1], fill=bg_color)
+                
+                # 绘制物品图片
+                if i in item_images and item_images[i] is not None:
+                    item_img = item_images[i]
+                    paste_x = x0 + (placed["width"] * cell_size - item_img.width) // 2
+                    paste_y = y0 + (placed["height"] * cell_size - item_img.height) // 2
+                    overlay.paste(item_img, (int(paste_x), int(paste_y)), item_img)
+                
+                # 绘制物品边框
+                draw.rectangle([x0, y0, x1, y1], outline=ITEM_BORDER_COLOR, width=BORDER_WIDTH)
+        
+        # 合并图层
+        frame_img = Image.alpha_composite(safe_img.convert("RGBA"), overlay).convert("RGB")
+        frames.append(frame_img)
+    
+    return frames
 
 def get_highest_level(placed_items):
     if not placed_items: return "purple"
@@ -385,9 +496,29 @@ def cleanup_old_images(keep_recent=2):
     except Exception as e:
         print(f"Error cleaning up old images: {e}")
 
-def generate_safe_image(menggong_mode=False, grid_size=2, time_multiplier=1.0):
+def cleanup_old_gifs(keep_recent=2):
+    try:
+        gif_files = glob.glob(os.path.join(output_dir, "*.gif"))
+        gif_files.sort(key=os.path.getmtime, reverse=True)
+        for old_file in gif_files[keep_recent:]:
+            os.remove(old_file)
+    except Exception as e:
+        print(f"Error cleaning up old GIFs: {e}")
+
+def generate_safe_image(menggong_mode=False, grid_size=2, time_multiplier=1.0, gif_scale=0.7, optimize_size=False, enable_static_image=False):
     """
-    Generate a safe image and return the image path and list of placed items.
+    Generate a safe GIF animation and return the image path and list of placed items.
+    
+    Args:
+        menggong_mode (bool): Whether to use menggong mode
+        grid_size (int): Size of the grid
+        time_multiplier (float): Time multiplier for animation
+        gif_scale (float): Scale factor for the final GIF size (1.0 = original size, 0.5 = half size, 2.0 = double size)
+        optimize_size (bool): Whether to optimize GIF file size (reduces colors and enables compression, may affect quality)
+        enable_static_image (bool): Whether to generate static image (only last frame) instead of GIF animation
+    
+    Returns:
+        tuple: (output_path, placed_items)
     """
     items = load_items()
     expressions = load_expressions()
@@ -397,42 +528,145 @@ def generate_safe_image(menggong_mode=False, grid_size=2, time_multiplier=1.0):
         return None, []
     
     placed_items, start_x, start_y, region_width, region_height = create_safe_layout(items, menggong_mode, grid_size, auto_mode=False, time_multiplier=time_multiplier)
-    safe_img = render_safe_layout(placed_items, start_x, start_y, region_width, region_height, grid_size)
+    safe_frames = render_safe_layout_gif(placed_items, start_x, start_y, region_width, region_height, grid_size)
     highest_level = get_highest_level(placed_items)
     
-    expression_map = {"gold": "happy", "red": "eat"}
-    expression = expression_map.get(highest_level, "cry")
+    # 计算动画完成的帧数（所有物品显示完成的时间点）
+    frames_per_item = 8  # 与render_safe_layout_gif中的值保持一致
     
-    expr_path = expressions.get(expression)
-    if not expr_path: return None, []
+    # 使用与render_safe_layout_gif中相同的转圈时长计算逻辑
+    duration_map = {
+        "blue": 6,    # 蓝色最短
+        "purple": 8,  # 紫色稍长
+        "gold": 20,    # 金色更长
+        "red": 32     # 红色最长
+    }
+    
+    # 计算最长转圈时长
+    max_rotation_duration = max([duration_map.get(placed["item"]["level"], 6) for placed in placed_items], default=8)
+    min_frames_needed = len(placed_items) * frames_per_item + max_rotation_duration
+    animation_complete_frame = min_frames_needed + 5  # 延后5帧显示最终表情
+    
+    # 加载eating.gif和最终表情图片
+    eating_path = expressions.get("eating")
+    expression_map = {"gold": "happy", "red": "eat"}
+    final_expression = expression_map.get(highest_level, "cry")
+    final_expr_path = expressions.get(final_expression)
+    
+    if not eating_path or not final_expr_path:
+        return None, []
     
     try:
-        with Image.open(expr_path).convert("RGBA") as expr_img:
-            # 移除白边：创建一个没有白边的版本
-            # 转换为RGBA以处理透明度
-            expr_img.thumbnail((safe_img.height, safe_img.height), Image.LANCZOS)
+        # 加载eating.gif的所有帧
+        eating_frames = []
+        with Image.open(eating_path) as eating_gif:
+            for frame_idx in range(eating_gif.n_frames):
+                eating_gif.seek(frame_idx)
+                eating_frame = eating_gif.convert("RGBA")
+                eating_frame.thumbnail((safe_frames[0].height, safe_frames[0].height), Image.LANCZOS)
+                eating_frames.append(eating_frame.copy())
+        
+        # 加载最终表情图片
+        with Image.open(final_expr_path).convert("RGBA") as final_expr_img:
+            final_expr_img.thumbnail((safe_frames[0].height, safe_frames[0].height), Image.LANCZOS)
             
-            # 创建一个与保险箱背景色相同的背景
-            final_img = Image.new("RGB", (expr_img.width + safe_img.width, safe_img.height), (50, 50, 50))
-            
-            # 如果表情图片有透明通道，使用背景色填充
-            if expr_img.mode == 'RGBA':
-                # 创建一个与背景色相同的底图
-                expr_bg = Image.new("RGB", expr_img.size, (50, 50, 50))
-                expr_bg.paste(expr_img, mask=expr_img.split()[-1])  # 使用alpha通道作为mask
-                final_img.paste(expr_bg, (0, 0))
-            else:
-                final_img.paste(expr_img, (0, 0))
-            
-            final_img.paste(safe_img, (expr_img.width, 0))
+            # 为每一帧添加表情图片
+            final_frames = []
+            for frame_idx, safe_frame in enumerate(safe_frames):
+                # 创建最终图像
+                final_img = Image.new("RGB", (safe_frames[0].height + safe_frame.width, safe_frame.height), (50, 50, 50))
+                
+                # 选择表情图片：第一帧显示最终表情，从第二帧开始显示eating.gif
+                if frame_idx == 0:
+                    # 第一帧显示最终表情
+                    current_expr = final_expr_img
+                else:
+                    # 从第二帧开始显示eating.gif的循环帧
+                    eating_frame_idx = (frame_idx - 1) % len(eating_frames)
+                    current_expr = eating_frames[eating_frame_idx]
+                
+                # 处理表情图片的透明通道
+                if current_expr.mode == 'RGBA':
+                    # 直接粘贴RGBA图片，保持透明效果
+                    final_img.paste(current_expr, (0, 0), current_expr)
+                else:
+                    final_img.paste(current_expr, (0, 0))
+                
+                # 添加保险箱帧
+                final_img.paste(safe_frame, (current_expr.width, 0))
+                
+                # 应用缩放
+                if gif_scale != 1.0:
+                    new_width = int(final_img.width * gif_scale)
+                    new_height = int(final_img.height * gif_scale)
+                    final_img = final_img.resize((new_width, new_height), Image.LANCZOS)
+                
+                # 如果启用了大小优化，转换为P模式以减少颜色数量
+                if optimize_size:
+                    # 转换为P模式（调色板模式）以减少文件大小
+                    final_img = final_img.convert('P', palette=Image.ADAPTIVE, colors=128)
+                
+                final_frames.append(final_img)
+                
     except Exception as e:
-        print(f"Error creating final image: {e}")
+        print(f"Error creating final GIF: {e}")
         return None, []
 
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    output_path = os.path.join(output_dir, f"safe_{timestamp}.png")
-    final_img.save(output_path)
     
-    cleanup_old_images()
+    # 根据静态图片模式选择输出格式和路径
+    if enable_static_image:
+        # 静态图片模式：生成静态图片（显示最终表情+所有物品显示完毕的状态）
+        output_path = os.path.join(output_dir, f"safe_{timestamp}.png")
+        if final_frames:
+            # 为静态图片创建特殊帧：左侧显示最终表情，右侧显示所有物品完成的保险箱
+            static_frame_index = min(animation_complete_frame, len(final_frames) - 1)
+            safe_frame = safe_frames[static_frame_index]
+            
+            # 创建静态图像
+            static_img = Image.new("RGB", (safe_frames[0].height + safe_frame.width, safe_frame.height), (50, 50, 50))
+            
+            # 左侧始终显示最终表情（不是eating.gif）
+            if final_expr_img.mode == 'RGBA':
+                static_img.paste(final_expr_img, (0, 0), final_expr_img)
+            else:
+                static_img.paste(final_expr_img, (0, 0))
+            
+            # 右侧显示所有物品显示完毕的保险箱
+            static_img.paste(safe_frame, (final_expr_img.width, 0))
+            
+            # 应用缩放
+            if gif_scale != 1.0:
+                new_width = int(static_img.width * gif_scale)
+                new_height = int(static_img.height * gif_scale)
+                static_img = static_img.resize((new_width, new_height), Image.LANCZOS)
+            
+            static_img.save(output_path, 'PNG')
+        cleanup_old_images()  # 清理旧的PNG文件
+    else:
+        # GIF动画模式
+        output_path = os.path.join(output_dir, f"safe_{timestamp}.gif")
+        
+        # 保存GIF动画
+        if final_frames:
+            # 根据optimize_size参数设置保存选项
+            save_kwargs = {
+                'save_all': True,
+                'append_images': final_frames[1:],
+                'duration': 150,  # 每帧150毫秒
+                'loop': 0  # 无限循环
+            }
+            
+            if optimize_size:
+                # 启用优化选项以减少文件大小
+                save_kwargs.update({
+                    'optimize': True,  # 启用优化
+                    'disposal': 2,     # 恢复到背景色
+                    'transparency': 0  # 设置透明色索引
+                })
+            
+            final_frames[0].save(output_path, **save_kwargs)
+        
+        cleanup_old_gifs()  # 清理旧的GIF文件
     
     return output_path, placed_items
