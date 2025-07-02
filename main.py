@@ -10,13 +10,13 @@ from .core.touchi_tools import TouchiTools
 from .core.tujian import TujianTools
 from .mima import MimaTools
 
-@register("astrbot_plugin_touchi", "touchi", "这是一个为 AstrBot 开发的鼠鼠偷吃插件，增加了图鉴特勤处鼠鼠榜功能", "2.3.2")
+@register("astrbot_plugin_touchi", "touchi", "这是一个为 AstrBot 开发的鼠鼠偷吃插件，增加了图鉴特勤处鼠鼠榜功能", "2.3.8")
 class Main(Star):
     @classmethod
     def info(cls):
         return {
             "name": "astrbot_plugin_touchi",
-            "version": "2.3.2",
+            "version": "2.3.8",
             "description": "这是一个为 AstrBot 开发的鼠鼠偷吃插件，增加了图鉴特勤处刘涛功能",
             "author": "sa1guu"
         }
@@ -132,9 +132,21 @@ class Main(Star):
         # 获取群号
         group_id = message_event.session_id.replace("group_", "")
         
-        # 检查是否在白名单中
-        if group_id in self.group_whitelist:
-            return True
+        # 检查是否在白名单中（支持字符串和数字类型的群号）
+        # 将群号转换为字符串进行比较，同时也检查数字类型
+        group_id_str = str(group_id)
+        try:
+            group_id_int = int(group_id)
+        except ValueError:
+            group_id_int = None
+        
+        for whitelist_group in self.group_whitelist:
+            # 支持字符串比较
+            if str(whitelist_group) == group_id_str:
+                return True
+            # 支持数字比较
+            if group_id_int is not None and whitelist_group == group_id_int:
+                return True
         
         # 非白名单群聊禁用
         return False
@@ -166,7 +178,7 @@ class Main(Star):
         """
         # 检查群聊权限
         if not self._check_group_permission(message_event):
-            return False, None  # 群聊权限失败时不返回错误信息
+            return False, "🐭 此群聊未在白名单中，无法使用鼠鼠功能"
         
         # 检查时间权限
         if not self._check_time_permission():
