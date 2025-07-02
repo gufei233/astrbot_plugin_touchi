@@ -33,5 +33,10 @@
         "type": "string",
         "default": "22:00:00",
         "description": "允许使用的结束时间，格式: HH:MM:SS"
+    },
+    "enable_static_image": {
+        "type": "bool",
+        "default": false,
+        "description": "是否启用静态图片模式，开启后只显示GIF的最后一帧而不是动画"
     }
 }
