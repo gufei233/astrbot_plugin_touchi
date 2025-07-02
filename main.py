@@ -1,5 +1,7 @@
 import os
 import asyncio
+import subprocess
+import sys
 import aiosqlite  # Import the standard SQLite library
 from datetime import datetime
 from astrbot.api.event import AstrMessageEvent
@@ -10,19 +12,78 @@ from .core.touchi_tools import TouchiTools
 from .core.tujian import TujianTools
 from .mima import MimaTools
 
-@register("astrbot_plugin_touchi", "touchi", "这是一个为 AstrBot 开发的鼠鼠偷吃插件，增加了图鉴特勤处鼠鼠榜功能", "2.3.8")
+@register("astrbot_plugin_touchi", "touchi", "这是一个为 AstrBot 开发的鼠鼠偷吃插件，增加了图鉴特勤处鼠鼠榜功能", "2.3.9")
 class Main(Star):
     @classmethod
     def info(cls):
         return {
             "name": "astrbot_plugin_touchi",
-            "version": "2.3.8",
+            "version": "2.3.9",
             "description": "这是一个为 AstrBot 开发的鼠鼠偷吃插件，增加了图鉴特勤处刘涛功能",
             "author": "sa1guu"
         }
+    
+    @staticmethod
+    def _check_and_install_dependencies():
+        """检查并自动安装所需依赖"""
+        required_packages = [
+            'playwright',
+            'beautifulsoup4', 
+            'Pillow',
+            'httpx',
+            'aiosqlite'
+        ]
+        
+        missing_packages = []
+        
+        for package in required_packages:
+            try:
+                __import__(package)
+            except ImportError:
+                # 特殊处理一些包名映射
+                if package == 'beautifulsoup4':
+                    try:
+                        __import__('bs4')
+                        continue
+                    except ImportError:
+                        pass
+                elif package == 'Pillow':
+                    try:
+                        __import__('PIL')
+                        continue
+                    except ImportError:
+                        pass
+                missing_packages.append(package)
+        
+        if missing_packages:
+            logger.info(f"检测到缺失依赖: {', '.join(missing_packages)}，正在自动安装...")
+            try:
+                for package in missing_packages:
+                    logger.info(f"正在安装 {package}...")
+                    subprocess.check_call([sys.executable, '-m', 'pip', 'install', package])
+                    logger.info(f"{package} 安装成功")
+                
+                # 检查是否需要安装playwright浏览器
+                if 'playwright' in missing_packages:
+                    logger.info("正在安装 playwright 浏览器...")
+                    subprocess.check_call([sys.executable, '-m', 'playwright', 'install', 'chromium'])
+                    logger.info("playwright 浏览器安装成功")
+                    
+                logger.info("所有依赖安装完成")
+            except subprocess.CalledProcessError as e:
+                logger.error(f"依赖安装失败: {e}")
+                logger.error("请手动安装依赖: pip install playwright beautifulsoup4 Pillow httpx aiosqlite")
+                logger.error("然后运行: playwright install chromium")
+            except Exception as e:
+                logger.error(f"依赖检查过程中出现错误: {e}")
+        else:
+            logger.info("所有依赖已满足")
 
     def __init__(self, context: Context, config: AstrBotConfig = None):
         super().__init__(context)
+        
+        # 检查并自动安装依赖
+        self._check_and_install_dependencies()
         
         self.config = config or {}
         self.enable_touchi = self.config.get("enable_touchi", True)
