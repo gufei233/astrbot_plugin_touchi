@@ -441,26 +441,58 @@ def render_safe_layout_gif(placed_items, start_x, start_y, region_width, region_
                 
                 # 计算转圈动画参数
                 rotation_frame = (frame_idx - item_start_frame) % item_rotation_duration
-                # 增加转动速度倍数，让线条转动更快（3倍速度）
-                rotation_angle = (rotation_frame * 360 * 3 // item_rotation_duration) % 360
+                # 根据转圈时长调整角速度，确保sousuo.png移动速度一致
+                # 使用基准时长20帧来标准化角速度，并增加速度倍数
+                base_duration = 20
+                speed_multiplier = item_rotation_duration / base_duration
+                speed_boost = 3.0  # 增加速度倍数，让转圈更快
+                rotation_angle = (rotation_frame * 360 * speed_multiplier * speed_boost // item_rotation_duration) % 360
                 
                 # 创建带旋转效果的背景
                 center_x = (x0 + x1) // 2
                 center_y = (y0 + y1) // 2
-                radius = min(placed["width"], placed["height"]) * cell_size // 4
                 
-                # 绘制旋转的弧线（显示在遮罩上方）
-                arc_length = 150  # 弧线长度（度数）
-                start_angle = rotation_angle
-                end_angle = rotation_angle + arc_length
+                # 计算转圈动画的参数，使用固定半径确保大小格物品轨迹一致
+                radius = cell_size // 6  # 缩小圆圈半径，让转圈轨迹更小
                 
-                # 计算弧线的边界框
-                bbox = [center_x - radius, center_y - radius, 
-                       center_x + radius, center_y + radius]
-                
-                # 绘制弧线
-                overlay_draw.arc(bbox, start_angle, end_angle, 
-                                fill=(255, 255, 255, 220), width=3)
+                # 使用 sousuo.png 图片代替弧线进行转圈动画
+                sousuo_path = os.path.join(expressions_dir, "sousuo.png")
+                if os.path.exists(sousuo_path):
+                    try:
+                        with Image.open(sousuo_path).convert("RGBA") as sousuo_img:
+                            # 调整 sousuo.png 的大小，使用固定大小确保一致性
+                            sousuo_size = 50  # 固定大小，不依赖半径
+                            sousuo_img = sousuo_img.resize((sousuo_size, sousuo_size), Image.LANCZOS)
+                            
+                            # 计算图片中心点的转圈轨迹位置
+                            angle_rad = math.radians(rotation_angle)
+                            orbit_x = center_x + radius * math.cos(angle_rad)
+                            orbit_y = center_y + radius * math.sin(angle_rad)
+                            
+                            # 计算图片左上角位置（使图片中心在轨迹上）
+                            paste_x = int(orbit_x - sousuo_size // 2)
+                            paste_y = int(orbit_y - sousuo_size // 2)
+                            
+                            # 粘贴图片（保持图片方向不变）
+                            overlay.paste(sousuo_img, (paste_x, paste_y), sousuo_img)
+                    except Exception as e:
+                        # 如果加载图片失败，回退到原来的弧线绘制
+                        arc_length = 150
+                        start_angle = rotation_angle
+                        end_angle = rotation_angle + arc_length
+                        bbox = [center_x - radius, center_y - radius, 
+                               center_x + radius, center_y + radius]
+                        overlay_draw.arc(bbox, start_angle, end_angle, 
+                                        fill=(255, 255, 255, 220), width=3)
+                else:
+                    # 如果 sousuo.png 不存在，回退到原来的弧线绘制
+                    arc_length = 150
+                    start_angle = rotation_angle
+                    end_angle = rotation_angle + arc_length
+                    bbox = [center_x - radius, center_y - radius, 
+                           center_x + radius, center_y + radius]
+                    overlay_draw.arc(bbox, start_angle, end_angle, 
+                                    fill=(255, 255, 255, 220), width=3)
             else:
                 # 转圈动画结束后，显示物品背景色和图片
                 # 绘制物品背景
