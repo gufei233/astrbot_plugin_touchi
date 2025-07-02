@@ -14,11 +14,12 @@ from astrbot.api.event import AstrMessageEvent
 from .touchi import generate_safe_image, get_item_value
 
 class TouchiTools:
-    def __init__(self, enable_touchi=True, enable_beauty_pic=True, cd=5, db_path=None):
+    def __init__(self, enable_touchi=True, enable_beauty_pic=True, cd=5, db_path=None, enable_static_image=False):
         self.enable_touchi = enable_touchi
         self.enable_beauty_pic = enable_beauty_pic
         self.cd = cd
         self.db_path = db_path # Path to the database file
+        self.enable_static_image = enable_static_image
         self.last_usage = {}
         self.waiting_users = {}  # 记录正在等待的用户及其结束时间
         self.semaphore = asyncio.Semaphore(10)
@@ -311,7 +312,7 @@ class TouchiTools:
             
             loop = asyncio.get_running_loop()
             safe_image_path, placed_items = await loop.run_in_executor(
-                None, generate_safe_image, menggong_mode, economy_data["grid_size"], time_multiplier
+                None, generate_safe_image, menggong_mode, economy_data["grid_size"], time_multiplier, 0.7, False, self.enable_static_image
             )
             
             if safe_image_path and os.path.exists(safe_image_path):
