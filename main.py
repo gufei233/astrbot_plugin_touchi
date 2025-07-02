@@ -9,13 +9,13 @@ from astrbot.api.event.filter import command
 from .core.touchi_tools import TouchiTools
 from .core.tujian import TujianTools
 
-@register("astrbot_plugin_touchi", "touchi", "这是一个为 AstrBot 开发的鼠鼠偷吃插件，增加了图鉴特勤处鼠鼠榜功能", "2.2.7")
+@register("astrbot_plugin_touchi", "touchi", "这是一个为 AstrBot 开发的鼠鼠偷吃插件，增加了图鉴特勤处鼠鼠榜功能", "2.3.1")
 class Main(Star):
     @classmethod
     def info(cls):
         return {
             "name": "astrbot_plugin_touchi",
-            "version": "2.2.7",
+            "version": "2.3.1",
             "description": "这是一个为 AstrBot 开发的鼠鼠偷吃插件，增加了图鉴特勤处刘涛功能",
             "author": "sa1guu"
         }
@@ -36,6 +36,9 @@ class Main(Star):
         self.time_limit_start = self.config.get("time_limit_start", "09:00:00")
         self.time_limit_end = self.config.get("time_limit_end", "22:00:00")
         
+        # 读取静态图片配置
+        self.enable_static_image = self.config.get("enable_static_image", False)
+        
         # Define path for the plugin's private database in its data directory
         data_dir = StarTools.get_data_dir("astrbot_plugin_touchi")
         os.makedirs(data_dir, exist_ok=True)
@@ -49,7 +52,8 @@ class Main(Star):
             enable_touchi=self.enable_touchi,
             enable_beauty_pic=self.enable_beauty_pic,
             cd=5,
-            db_path=self.db_path
+            db_path=self.db_path,
+            enable_static_image=self.enable_static_image
         )
 
         self.tujian_tools = TujianTools(db_path=self.db_path)
@@ -156,14 +160,27 @@ class Main(Star):
     def _check_all_permissions(self, message_event):
         """
         检查所有权限（群聊白名单 + 时间限制）
-        返回: 是否允许
+        返回: (是否允许, 错误信息)
         """
-        return self._check_group_permission(message_event) and self._check_time_permission()
+        # 检查群聊权限
+        if not self._check_group_permission(message_event):
+            return False, None  # 群聊权限失败时不返回错误信息
+        
+        # 检查时间权限
+        if not self._check_time_permission():
+            # 时间限制失败时返回提示信息
+            time_range = f"{self.time_limit_start} - {self.time_limit_end}"
+            return False, f"🐭 鼠鼠休息中 {time_range} 可偷吃"
+        
+        return True, None
 
     @command("偷吃")
     async def touchi(self, event: AstrMessageEvent):
         """盲盒功能"""
-        if not self._check_all_permissions(event):
+        allowed, error_msg = self._check_all_permissions(event)
+        if not allowed:
+            if error_msg:
+                yield event.plain_result(error_msg)
             return
         
         async for result in self.touchi_tools.get_touchi(event):
@@ -172,7 +189,10 @@ class Main(Star):
     @command("鼠鼠图鉴")
     async def tujian(self, event: AstrMessageEvent):
         """显示用户稀有物品图鉴（金色和红色）"""
-        if not self._check_all_permissions(event):
+        allowed, error_msg = self._check_all_permissions(event)
+        if not allowed:
+            if error_msg:
+                yield event.plain_result(error_msg)
             return
         
         try:
@@ -220,7 +240,10 @@ class Main(Star):
     @command("六套猛攻")
     async def menggong(self, event: AstrMessageEvent):
         """六套猛攻功能"""
-        if not self._check_all_permissions(event):
+        allowed, error_msg = self._check_all_permissions(event)
+        if not allowed:
+            if error_msg:
+                yield event.plain_result(error_msg)
             return
         
         async for result in self.touchi_tools.menggong_attack(event):
@@ -229,7 +252,10 @@ class Main(Star):
     @command("特勤处升级")
     async def upgrade_teqin(self, event: AstrMessageEvent):
         """特勤处升级功能"""
-        if not self._check_all_permissions(event):
+        allowed, error_msg = self._check_all_permissions(event)
+        if not allowed:
+            if error_msg:
+                yield event.plain_result(error_msg)
             return
         
         async for result in self.touchi_tools.upgrade_teqin(event):
@@ -238,7 +264,10 @@ class Main(Star):
     @command("鼠鼠仓库")
     async def warehouse_value(self, event: AstrMessageEvent):
         """查看仓库价值"""
-        if not self._check_all_permissions(event):
+        allowed, error_msg = self._check_all_permissions(event)
+        if not allowed:
+            if error_msg:
+                yield event.plain_result(error_msg)
             return
         
         async for result in self.touchi_tools.get_warehouse_info(event):
@@ -247,7 +276,10 @@ class Main(Star):
     @command("鼠鼠榜")
     async def leaderboard(self, event: AstrMessageEvent):
         """显示图鉴数量榜和仓库价值榜前五位"""
-        if not self._check_all_permissions(event):
+        allowed, error_msg = self._check_all_permissions(event)
+        if not allowed:
+            if error_msg:
+                yield event.plain_result(error_msg)
             return
         
         async for result in self.touchi_tools.get_leaderboard(event):
@@ -256,7 +288,10 @@ class Main(Star):
     @command("开启自动偷吃")
     async def start_auto_touchi(self, event: AstrMessageEvent):
         """开启自动偷吃功能"""
-        if not self._check_all_permissions(event):
+        allowed, error_msg = self._check_all_permissions(event)
+        if not allowed:
+            if error_msg:
+                yield event.plain_result(error_msg)
             return
         
         async for result in self.touchi_tools.start_auto_touchi(event):
@@ -265,7 +300,10 @@ class Main(Star):
     @command("关闭自动偷吃")
     async def stop_auto_touchi(self, event: AstrMessageEvent):
         """关闭自动偷吃功能"""
-        if not self._check_all_permissions(event):
+        allowed, error_msg = self._check_all_permissions(event)
+        if not allowed:
+            if error_msg:
+                yield event.plain_result(error_msg)
             return
         
         async for result in self.touchi_tools.stop_auto_touchi(event):
@@ -384,7 +422,10 @@ class Main(Star):
     @command("touchi")
     async def help_command(self, event: AstrMessageEvent):
         """显示所有可用指令的帮助信息"""
-        if not self._check_all_permissions(event):
+        allowed, error_msg = self._check_all_permissions(event)
+        if not allowed:
+            if error_msg:
+                yield event.plain_result(error_msg)
             return
         
         help_text = """🐭 鼠鼠偷吃插件 - 指令帮助 🐭
