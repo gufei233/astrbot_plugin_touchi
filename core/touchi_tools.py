@@ -6,10 +6,8 @@ import os
 import time
 import httpx
 import aiosqlite  # Import the standard SQLite library
-from astrbot.core.message.message_event_result import MessageChain
 from astrbot.api.message_components import At, Plain, Image
 from astrbot.api import logger
-from astrbot.api.event import AstrMessageEvent
 
 from .touchi import generate_safe_image, get_item_value
 
@@ -34,6 +32,10 @@ class TouchiTools:
         
         self.multiplier = 1.0
         
+        # 初始化概率事件系统
+        from .touchi_events import TouchiEvents
+        self.events = TouchiEvents(self.db_path, self.biaoqing_dir)
+        
         self.safe_box_messages = [
             ("鼠鼠偷吃中...(预计{}min)", ["touchi1.gif", "touchi2.gif", "touchi3.gif", "touchi4.gif"], 120),
             ("鼠鼠猛攻中...(预计{}min)", "menggong.gif", 60)
@@ -46,6 +48,9 @@ class TouchiTools:
         self.auto_touchi_data = {}   # 存储自动偷吃期间的数据
         self.nickname_cache = {}     # 缓存群成员昵称，格式: {group_id: {user_id: nickname}}
         self.cache_expire_time = {}  # 缓存过期时间
+        
+        # 延迟结果存储
+        self._delayed_result = None
     
     def set_multiplier(self, multiplier: float):
         if multiplier < 0.01 or multiplier > 100:
@@ -73,7 +78,7 @@ class TouchiTools:
             logger.error(f"清除用户数据时出错: {e}")
             return "清除数据失败，请重试"
     
-    async def _get_group_member_nicknames(self, event: AstrMessageEvent, group_id: str):
+    async def _get_group_member_nicknames(self, event, group_id: str):
         """获取群成员昵称映射，带缓存机制"""
         current_time = time.time()
         
@@ -282,12 +287,46 @@ class TouchiTools:
                 logger.warning(f"表情图片不存在: {image_path}")
                 yield event.plain_result(message)
             else:
-                chain = [Plain(message), Image.fromFileSystem(image_path)]
+                chain = [
+                    Plain(message),
+                    Image.fromFileSystem(image_path)
+                ]
                 yield event.chain_result(chain)
             
             # 记录用户等待结束时间
             self.waiting_users[user_id] = now + actual_wait_time
-            asyncio.create_task(self.send_delayed_safe_box(event, actual_wait_time, user_id, time_multiplier=time_multiplier))
+            
+            # 创建后台任务并等待结果
+            task = asyncio.create_task(self.send_delayed_safe_box(event, actual_wait_time, user_id, time_multiplier=time_multiplier))
+            
+            # 等待后台任务完成
+            await task
+            
+            # 检查是否有延迟结果需要发送
+            if hasattr(self, '_delayed_result') and self._delayed_result:
+                result = self._delayed_result
+                self._delayed_result = None  # 清除结果
+                
+                if result['success']:
+                    if result['image_path']:
+                        chain = [
+                            At(qq=event.get_sender_id()),
+                            Plain(f"{result['message']}"),
+                            Image.fromFileSystem(result['image_path']),
+                        ]
+                        yield event.chain_result(chain)
+                    else:
+                        chain = [
+                            At(qq=event.get_sender_id()),
+                            Plain(result['message'])
+                        ]
+                        yield event.chain_result(chain)
+                else:
+                    chain = [
+                        At(qq=event.get_sender_id()),
+                        Plain(result['message'])
+                    ]
+                    yield event.chain_result(chain)
 
     async def send_delayed_safe_box(self, event, wait_time, user_id=None, menggong_mode=False, time_multiplier=1.0):
         """异步生成保险箱图片，发送并记录到数据库"""
@@ -302,7 +341,7 @@ class TouchiTools:
                 del self.waiting_users[user_id]
             economy_data = await self.get_user_economy_data(user_id)
             if not economy_data:
-                await event.send(MessageChain([Plain("🎁获取用户数据失败！")]))
+                # 这是后台任务，无法使用yield，直接返回
                 return
             
             # 检查猛攻状态
@@ -311,33 +350,239 @@ class TouchiTools:
                 menggong_mode = True
             
             loop = asyncio.get_running_loop()
+             
+            # 默认使用用户当前的格子大小
+            used_grid_size = economy_data["grid_size"]
+            
+            # 检查是否需要使用特殊模式（系统补偿局事件使用六套模式概率）
+            use_menggong_probability = menggong_mode
+            
             safe_image_path, placed_items = await loop.run_in_executor(
-                None, generate_safe_image, menggong_mode, economy_data["grid_size"], time_multiplier, 0.7, False, self.enable_static_image
+                None, generate_safe_image, use_menggong_probability, used_grid_size, time_multiplier, 0.7, False, self.enable_static_image
             )
             
             if safe_image_path and os.path.exists(safe_image_path):
-                await self.add_items_to_collection(user_id, placed_items)
-                
                 # 计算总价值
                 total_value = sum(item["item"].get("value", get_item_value(
                     os.path.splitext(os.path.basename(item["item"]["path"]))[0]
                 )) for item in placed_items)
                 
+                # 检查概率事件
+                event_triggered, event_type, final_items, final_value, event_message, cooldown_multiplier, golden_item_path = await self.events.check_random_events(
+                    event, user_id, placed_items, total_value
+                )
+                
+                # 如果触发系统补偿局事件，需要重新生成图片使用六套模式概率
+                if event_triggered and event_type == "system_compensation":
+                    # 重新生成图片，使用六套模式概率
+                    safe_image_path, placed_items = await loop.run_in_executor(
+                        None, generate_safe_image, True, used_grid_size, time_multiplier, 0.7, False, self.enable_static_image
+                    )
+                    
+                    # 重新计算总价值
+                    final_value = sum(item["item"].get("value", get_item_value(
+                        os.path.splitext(os.path.basename(item["item"]["path"]))[0]
+                    )) for item in placed_items)
+                    final_items = placed_items
+                
+                # 如果路人鼠鼠事件触发且有金色物品，添加金色物品并重新生成图片
+                if golden_item_path and event_type == "passerby_mouse":
+                    # 添加金色物品到物品列表开头，使用正确的格式
+                    golden_item_name = os.path.splitext(os.path.basename(golden_item_path))[0]
+                    golden_item = {
+                        "item": {
+                            "name": golden_item_name,
+                            "path": golden_item_path,
+                            "level": "gold",
+                            "base_name": golden_item_name.split('_', 2)[-1] if '_' in golden_item_name else golden_item_name,
+                            "value": 0  # 临时值，会在后面重新计算
+                        }
+                    }
+                    # 将金色物品添加到final_items开头
+                    final_items.insert(0, golden_item)
+                    
+                    # 使用最大格子重新生成图片，创建一个特殊的生成函数
+                    def generate_with_specific_items():
+                        from .touchi import load_items, create_safe_layout, render_safe_layout_gif, get_highest_level, load_expressions
+                        from PIL import Image
+                        import os
+                        from datetime import datetime
+                        
+                        # 加载所有可用物品
+                        all_items = load_items()
+                        if not all_items:
+                            return None, []
+                        
+                        # 创建包含金色物品的特定物品列表
+                        specific_items = []
+                        
+                        # 添加金色物品
+                        golden_item_name = os.path.splitext(os.path.basename(golden_item_path))[0]
+                        for item in all_items:
+                            if item["base_name"] == golden_item_name and item["level"] == "gold":
+                                specific_items.append(item)
+                                break
+                        
+                        # 添加其他已放置的物品
+                        for placed_item in placed_items:
+                            item_name = placed_item["item"]["base_name"]
+                            item_level = placed_item["item"]["level"]
+                            for item in all_items:
+                                if item["base_name"] == item_name and item["level"] == item_level:
+                                    specific_items.append(item)
+                                    break
+                        
+                        # 使用最大格子(7x7)重新布局
+                        from .touchi import place_items
+                        placed_items_new = place_items(specific_items, 7, 7, 7)
+                        
+                        # 生成图片
+                        safe_frames = render_safe_layout_gif(placed_items_new, 0, 0, 7, 7, 7)
+                        if not safe_frames:
+                            return None, []
+                        
+                        # 加载表情图片
+                        expressions = load_expressions()
+                        if not expressions:
+                            return None, []
+                        
+                        highest_level = get_highest_level(placed_items_new)
+                        eating_path = expressions.get("eating")
+                        expression_map = {"gold": "happy", "red": "eat"}
+                        final_expression = expression_map.get(highest_level, "cry")
+                        final_expr_path = expressions.get(final_expression)
+                        
+                        if not eating_path or not final_expr_path:
+                            return None, []
+                        
+                        # 生成最终图片
+                        expression_size = 7 * 100  # 7x7格子
+                        
+                        # 加载eating.gif帧
+                        eating_frames = []
+                        with Image.open(eating_path) as eating_gif:
+                            for frame_idx in range(eating_gif.n_frames):
+                                eating_gif.seek(frame_idx)
+                                eating_frame = eating_gif.convert("RGBA")
+                                eating_frame = eating_frame.resize((expression_size, expression_size), Image.LANCZOS)
+                                eating_frames.append(eating_frame.copy())
+                        
+                        # 加载最终表情
+                        with Image.open(final_expr_path).convert("RGBA") as final_expr_img:
+                            final_expr_img = final_expr_img.resize((expression_size, expression_size), Image.LANCZOS)
+                            
+                            # 生成最终帧
+                            final_frames = []
+                            for frame_idx, safe_frame in enumerate(safe_frames):
+                                final_img = Image.new("RGB", (expression_size + safe_frame.width, safe_frame.height), (50, 50, 50))
+                                
+                                if frame_idx == 0:
+                                    current_expr = final_expr_img
+                                else:
+                                    eating_frame_idx = (frame_idx - 1) % len(eating_frames)
+                                    current_expr = eating_frames[eating_frame_idx]
+                                
+                                if current_expr.mode == 'RGBA':
+                                    final_img.paste(current_expr, (0, 0), current_expr)
+                                else:
+                                    final_img.paste(current_expr, (0, 0))
+                                
+                                final_img.paste(safe_frame, (expression_size, 0))
+                                
+                                # 应用缩放
+                                new_width = int(final_img.width * 0.7)
+                                new_height = int(final_img.height * 0.7)
+                                final_img = final_img.resize((new_width, new_height), Image.LANCZOS)
+                                
+                                final_frames.append(final_img)
+                        
+                        # 保存GIF
+                        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                        from .touchi import output_dir
+                        output_path = os.path.join(output_dir, f"safe_{timestamp}.gif")
+                        
+                        if final_frames:
+                            final_frames[0].save(
+                                output_path,
+                                save_all=True,
+                                append_images=final_frames[1:],
+                                duration=150,
+                                loop=0
+                            )
+                        
+                        return output_path, placed_items_new
+                    
+                    safe_image_path, placed_items = await loop.run_in_executor(None, generate_with_specific_items)
+                    
+                    # 重新计算总价值（包含金色物品）
+                    final_value = 0
+                    for item in final_items:
+                        if "item" in item:
+                            # 标准格式的物品
+                            item_data = item["item"]
+                            item_name = os.path.splitext(os.path.basename(item_data["path"]))[0]
+                            item_value = item_data.get("value", get_item_value(item_name))
+                        else:
+                            # 兼容旧格式
+                            item_name = os.path.splitext(os.path.basename(item.get("image_path", item.get("path", ""))))[0]
+                            item_value = item.get("value", get_item_value(item_name))
+                        final_value += item_value
+                
+                # 根据事件结果决定是否添加物品到收藏
+                if not event_triggered or event_type != "genius_kick":
+                    # 正常情况或非踢死事件：添加物品到收藏
+                    await self.add_items_to_collection(user_id, final_items)
+                # 踢死事件：物品已在事件处理中被清空，不添加到收藏
+                
+                # 处理冷却时间倍率（菜b队友事件和系统补偿局事件）
+                if cooldown_multiplier and cooldown_multiplier != 1.0:
+                    # 应用冷却时间倍率到下次偷吃
+                    if user_id in self.waiting_users:
+                        current_end_time = self.waiting_users[user_id]
+                        current_time = asyncio.get_event_loop().time()
+                        remaining_time = max(0, current_end_time - current_time)
+                        
+                        if cooldown_multiplier > 1.0:
+                            # 延长剩余等待时间（菜b队友事件）
+                            additional_time = remaining_time * (cooldown_multiplier - 1.0)
+                            self.waiting_users[user_id] = current_end_time + additional_time
+                        elif cooldown_multiplier < 1.0:
+                            # 减少剩余等待时间（系统补偿局事件）
+                            reduction_time = remaining_time * (1.0 - cooldown_multiplier)
+                            self.waiting_users[user_id] = current_end_time - reduction_time
+                
+                # 构建基础消息
                 message = "鼠鼠偷吃到了" if not menggong_mode else "鼠鼠猛攻获得了"
-                chain = MessageChain([
-                    At(qq=event.get_sender_id()),
-                    Plain(f"{message}\n总价值: {total_value:,}"),
-                    Image.fromFileSystem(safe_image_path),
-                ])
-                await event.send(chain)
+                base_message = f"{message}\n总价值: {final_value:,}"
+                
+                # 如果有事件触发，添加事件消息
+                if event_triggered and event_message:
+                    base_message += f"\n\n{event_message}"
+                
+                # 发送消息和图片 - 后台任务无法使用yield，需要通过其他方式发送
+                # 这里我们将结果保存，让调用方处理发送
+                self._delayed_result = {
+                    'success': True,
+                    'message': base_message,
+                    'image_path': safe_image_path if safe_image_path and os.path.exists(safe_image_path) else None,
+                    'combined': True  # 标记需要合并发送
+                }
             else:
-                await event.send(MessageChain([Plain("🎁 图片生成失败！")]))
+                self._delayed_result = {
+                    'success': False,
+                    'message': "🎁 图片生成失败！",
+                    'image_path': None
+                }
                 
         except Exception as e:
             logger.error(f"执行偷吃代码或发送结果时出错: {e}")
-            await event.send(MessageChain([Plain("🎁打开时出了点问题！")]))
+            self._delayed_result = {
+                'success': False,
+                'message': "🎁打开时出了点问题！",
+                'image_path': None
+            }
 
-    async def menggong_attack(self, event):
+    async def menggong_attack(self, event, custom_duration=None):
         """六套猛攻功能"""
         user_id = event.get_sender_id()
         
@@ -364,8 +609,13 @@ class TouchiTools:
                     yield event.plain_result(f"刘涛状态进行中，剩余时间: {seconds}秒")
                 return
             
-            # 扣除仓库价值并激活猛攻状态
-            menggong_end_time = current_time + 120  # 2分钟
+            # 获取时间倍率
+            time_multiplier = await self.get_menggong_time_multiplier()
+            
+            # 使用自定义时长或默认2分钟，然后应用倍率
+            base_duration = custom_duration * 60 if custom_duration else 120
+            duration_seconds = int(base_duration * time_multiplier)
+            menggong_end_time = current_time + duration_seconds
             
             async with aiosqlite.connect(self.db_path) as db:
                 await db.execute(
@@ -374,20 +624,28 @@ class TouchiTools:
                 )
                 await db.commit()
             
-            # 发送猛攻图片
+            # 发送猛攻消息和图片
+            duration_minutes = duration_seconds // 60
+            duration_remainder = duration_seconds % 60
+            if duration_remainder > 0:
+                duration_text = f"{duration_minutes}分{duration_remainder}秒"
+            else:
+                duration_text = f"{duration_minutes}分钟"
+            base_message = f"🔥 六套猛攻激活！{duration_text}内提高红色和金色物品概率，不出现蓝色物品！\n消耗哈夫币: 3,000,000"
+            
+            # 发送猛攻gif图片
             menggong_image_path = os.path.join(self.biaoqing_dir, "menggong.gif")
             if os.path.exists(menggong_image_path):
                 chain = [
-                    At(qq=event.get_sender_id()),
-                    Plain("🔥 六套猛攻激活！2分钟内提高红色和金色物品概率，不出现蓝色物品！\n消耗哈夫币: 3,000,000"),
+                    Plain(base_message),
                     Image.fromFileSystem(menggong_image_path)
                 ]
                 yield event.chain_result(chain)
             else:
-                yield event.plain_result("🔥 六套猛攻激活！2分钟内提高红色和金色物品概率，不出现蓝色物品！\n消耗哈夫币: 3,000,000")
+                yield event.plain_result(base_message)
             
-            # 2分钟后自动关闭猛攻状态
-            asyncio.create_task(self._disable_menggong_after_delay(user_id, 120))
+            # 自动关闭猛攻状态
+            asyncio.create_task(self._disable_menggong_after_delay(user_id, duration_seconds))
             
         except Exception as e:
             logger.error(f"六套猛攻功能出错: {e}")
@@ -406,6 +664,73 @@ class TouchiTools:
             logger.info(f"用户 {user_id} 的猛攻状态已自动关闭")
         except Exception as e:
             logger.error(f"关闭猛攻状态时出错: {e}")
+    
+    async def set_menggong_time_all(self, duration_minutes):
+        """为所有用户设置六套时间（管理员功能）"""
+        try:
+            current_time = int(time.time())
+            duration_seconds = duration_minutes * 60
+            menggong_end_time = current_time + duration_seconds
+            
+            async with aiosqlite.connect(self.db_path) as db:
+                # 获取所有用户ID
+                cursor = await db.execute("SELECT user_id FROM user_economy")
+                user_ids = await cursor.fetchall()
+                
+                if not user_ids:
+                    return "❌ 没有找到任何用户数据"
+                
+                # 为所有用户设置六套时间
+                await db.execute(
+                    "UPDATE user_economy SET menggong_active = 1, menggong_end_time = ?",
+                    (menggong_end_time,)
+                )
+                await db.commit()
+            
+            # 为所有用户创建自动关闭任务
+            for user_row in user_ids:
+                user_id = user_row[0]
+                asyncio.create_task(self._disable_menggong_after_delay(user_id, duration_seconds))
+            
+            user_count = len(user_ids)
+            return f"✅ 已为所有用户({user_count}人)设置 {duration_minutes} 分钟的六套时间"
+            
+        except Exception as e:
+            logger.error(f"设置全体六套时间时出错: {e}")
+            return f"❌ 设置六套时间失败: {str(e)}"
+    
+    async def set_menggong_time_multiplier(self, multiplier):
+        """设置六套时间倍率（管理员功能）"""
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                # 更新系统配置中的时间倍率
+                await db.execute(
+                    "INSERT OR REPLACE INTO system_config (config_key, config_value) VALUES ('menggong_time_multiplier', ?)",
+                    (str(multiplier),)
+                )
+                await db.commit()
+            
+            return f"✅ 已设置六套时间倍率为 {multiplier}x\n💡 新用户激活六套时间时将使用此倍率"
+            
+        except Exception as e:
+            logger.error(f"设置六套时间倍率时出错: {e}")
+            return f"❌ 设置六套时间倍率失败: {str(e)}"
+    
+    async def get_menggong_time_multiplier(self):
+        """获取当前六套时间倍率"""
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                cursor = await db.execute(
+                    "SELECT config_value FROM system_config WHERE config_key = 'menggong_time_multiplier'"
+                )
+                result = await cursor.fetchone()
+                if result:
+                    return float(result[0])
+                else:
+                    return 1.0  # 默认倍率
+        except Exception as e:
+            logger.error(f"获取六套时间倍率时出错: {e}")
+            return 1.0  # 默认倍率
 
     async def upgrade_teqin(self, event):
         """特勤处升级功能"""
@@ -750,10 +1075,7 @@ class TouchiTools:
                 if time.time() - start_time >= max_duration:
                     logger.info(f"用户 {user_id} 的自动偷吃已运行4小时，自动停止")
                     await self._stop_auto_touchi_internal(user_id)
-                    try:
-                        await event.send(MessageChain([Plain("🛑 自动偷吃已运行4小时，自动停止")]))
-                    except:
-                        pass  # 发送失败不影响停止逻辑
+                    # 注意：这里不能发送消息，因为这是后台任务
                     break
                 
                 await asyncio.sleep(interval)
