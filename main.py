@@ -486,10 +486,20 @@ class Main(Star):
             return
         
         try:
-            # 调用完全独立的 mima_standalone.py
-            from .mima_standalone import get_mima_async
+            # 优先从TXT文件读取密码信息
+            from .mima_standalone import get_mima_from_txt, get_mima_async
+            
+            # 尝试从TXT文件读取
+            txt_result = get_mima_from_txt()
+            if txt_result:
+                yield event.plain_result(txt_result)
+                return
+            
+            # TXT文件不存在或读取失败，从网络获取
+            logger.info("TXT文件不存在或读取失败，正在从网络获取密码信息")
             result = await get_mima_async()
             yield event.plain_result(result)
+            
         except ImportError as e:
             logger.error(f"导入playwright模块失败: {e}")
             yield event.plain_result("🐭 获取密码功能需要playwright依赖\n\n🔧 解决方案:\n1. 检查网络连接\n2. 重新安装playwright:\n   pip install playwright\n   playwright install chromium")
