@@ -135,6 +135,12 @@ class MimaCache:
         self.data_dir = os.path.join(current_dir, "data", "mima_standalone")
         os.makedirs(self.data_dir, exist_ok=True)
         self.cache_file = os.path.join(self.data_dir, "mima_cache.json")
+        
+        # TXT文件保存路径
+        self.output_dir = os.path.join(current_dir, "core", "output")
+        os.makedirs(self.output_dir, exist_ok=True)
+        self.txt_file = os.path.join(self.output_dir, "mima_passwords.txt")
+        
         self.api = AcgIceSJZApi()
 
     def _is_cache_expired(self, cache_time: str) -> bool:
@@ -196,9 +202,60 @@ class MimaCache:
             with open(self.cache_file, 'w', encoding='utf-8') as f:
                 json.dump(cache_data, f, ensure_ascii=False, indent=2)
                 
+            # 同时保存到TXT文件
+            self._save_txt_file(data)
+                
             logger.info("密码缓存已保存")
         except Exception as e:
             logger.error(f"保存密码缓存出错: {e}")
+    
+    def _save_txt_file(self, data: Dict) -> None:
+        """
+        保存密码数据到TXT文件
+        """
+        try:
+            # 清理过期的TXT文件
+            self._cleanup_old_txt_files()
+            
+            current_time = datetime.now()
+            txt_content = []
+            txt_content.append(f"# 鼠鼠密码数据")
+            txt_content.append(f"# 生成时间: {current_time.strftime('%Y-%m-%d %H:%M:%S')}")
+            txt_content.append(f"# 有效期至: {current_time.strftime('%Y-%m-%d')} 23:59:59")
+            txt_content.append("")
+            
+            for map_name, info in data.items():
+                password = info.get('password', '未知密码')
+                date = info.get('date', '未知日期')
+                txt_content.append(f"地图: {map_name}")
+                txt_content.append(f"密码: {password}")
+                txt_content.append(f"日期: {date}")
+                txt_content.append("---")
+            
+            with open(self.txt_file, 'w', encoding='utf-8') as f:
+                f.write('\n'.join(txt_content))
+                
+            logger.info(f"密码TXT文件已保存到: {self.txt_file}")
+        except Exception as e:
+            logger.error(f"保存密码TXT文件出错: {e}")
+    
+    def _cleanup_old_txt_files(self) -> None:
+        """
+        清理过期的TXT文件（第二天删除）
+        """
+        try:
+            if os.path.exists(self.txt_file):
+                # 获取文件修改时间
+                file_mtime = os.path.getmtime(self.txt_file)
+                file_date = datetime.fromtimestamp(file_mtime).date()
+                current_date = datetime.now().date()
+                
+                # 如果文件不是今天创建的，删除它
+                if file_date < current_date:
+                    os.remove(self.txt_file)
+                    logger.info("已删除过期的密码TXT文件")
+        except Exception as e:
+            logger.error(f"清理过期TXT文件出错: {e}")
 
     def _clear_cache(self) -> None:
         """
@@ -208,8 +265,31 @@ class MimaCache:
             if os.path.exists(self.cache_file):
                 os.remove(self.cache_file)
                 logger.info("密码缓存已清除")
+            if os.path.exists(self.txt_file):
+                os.remove(self.txt_file)
+                logger.info("密码TXT文件已清除")
         except Exception as e:
             logger.error(f"清除密码缓存出错: {e}")
+    
+    def read_txt_file(self) -> Optional[str]:
+        """
+        读取TXT文件内容，供main.py调用
+        """
+        try:
+            # 先清理过期文件
+            self._cleanup_old_txt_files()
+            
+            if os.path.exists(self.txt_file):
+                with open(self.txt_file, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                logger.info("从TXT文件读取密码数据")
+                return content
+            else:
+                logger.warning("TXT文件不存在")
+                return None
+        except Exception as e:
+            logger.error(f"读取TXT文件出错: {e}")
+            return None
 
     async def get_passwords(self) -> Dict:
         """
@@ -359,6 +439,52 @@ def get_mima_sync():
     except RuntimeError:
         # 没有事件循环，直接运行
         return asyncio.run(get_mima_async())
+
+
+def get_mima_from_txt() -> Optional[str]:
+    """
+    从TXT文件读取密码信息，供main.py调用
+    """
+    try:
+        cache = MimaCache()
+        txt_content = cache.read_txt_file()
+        
+        if txt_content:
+            # 解析TXT内容并格式化为用户友好的消息
+            lines = txt_content.split('\n')
+            message_lines = ["🗝️ 鼠鼠密码 🗝️"]
+            message_lines.append("")
+            
+            current_map = None
+            current_password = None
+            current_date = None
+            
+            for line in lines:
+                line = line.strip()
+                if line.startswith('地图: '):
+                    current_map = line.replace('地图: ', '')
+                elif line.startswith('密码: '):
+                    current_password = line.replace('密码: ', '')
+                elif line.startswith('日期: '):
+                    current_date = line.replace('日期: ', '')
+                elif line == '---' and current_map and current_password:
+                    message_lines.append(f"📍 {current_map}")
+                    message_lines.append(f"🔑 密码: {current_password}")
+                    message_lines.append(f"📅 日期: {current_date}")
+                    message_lines.append("")
+                    current_map = current_password = current_date = None
+            
+            # 添加提示信息
+            current_time = datetime.now().strftime("%H:%M:%S")
+            message_lines.append(f"⏰ 读取时间: {current_time}")
+            message_lines.append("💡 密码数据来自TXT文件缓存")
+            
+            return "\n".join(message_lines)
+        else:
+            return None
+    except Exception as e:
+        logger.error(f"从TXT文件获取密码信息出错: {e}")
+        return None
 
 
 async def main():
