@@ -9,13 +9,13 @@ from astrbot.api.event.filter import command
 from .core.touchi_tools import TouchiTools
 from .core.tujian import TujianTools
 
-@register("astrbot_plugin_touchi", "touchi", "这是一个为 AstrBot 开发的鼠鼠偷吃插件，增加了图鉴特勤处鼠鼠榜功能", "2.4.4")
+@register("astrbot_plugin_touchi", "touchi", "这是一个为 AstrBot 开发的鼠鼠偷吃插件，增加了图鉴特勤处鼠鼠榜功能", "2.4.5")
 class Main(Star):
     @classmethod
     def info(cls):
         return {
             "name": "astrbot_plugin_touchi",
-            "version": "2.4.4",
+            "version": "2.4.5",
             "description": "这是一个为 AstrBot 开发的鼠鼠偷吃插件，增加了图鉴特勤处刘涛功能",
             "author": "sa1guu"
         }
@@ -111,6 +111,12 @@ class Main(Star):
                     await db.execute("ALTER TABLE user_economy ADD COLUMN auto_touchi_start_time REAL DEFAULT 0")
                 except:
                     pass  # 字段已存在
+                
+                # 添加六套时间倍率配置
+                await db.execute("""
+                    INSERT OR IGNORE INTO system_config (config_key, config_value) 
+                    VALUES ('menggong_time_multiplier', '1.0')
+                """)
                 await db.commit()
             logger.info("偷吃插件数据库[collection.db]初始化成功。")
         except Exception as e:
@@ -460,6 +466,9 @@ class Main(Star):
 • 开启自动偷吃 - 启动自动偷吃模式(每10分钟，最多4小时)
 • 关闭自动偷吃 - 停止自动偷吃模式
 
+🎲 概率事件：
+• 偷吃事件 - 查看偷吃概率事件统计和说明
+
 🗝️ 密码功能：
 • 鼠鼠密码 - 获取地图密码信息(缓存至晚上12点)
 
@@ -469,10 +478,12 @@ class Main(Star):
 • 特勤处等级 [等级] - 设置新用户的初始特勤处等级(0-5)
 • 鼠鼠限时 - 设置插件使用时间范围限制 如 09:00:00 22:00:00
 • 刷新密码 - 强制刷新密码缓存
+• 六套时间倍率 [倍率] - 设置六套时间倍率(0.1-10.0)
 
 更新：配置文件中开设置群聊启用白名单
 💡 提示：
 • 自动偷吃期间无法手动偷吃
+• 偷吃时有概率触发特殊事件，详见"偷吃事件"指令
 • 首次使用请先输入"偷吃"开始游戏！"""
         yield event.plain_result(help_text)
 
@@ -539,3 +550,114 @@ class Main(Star):
                 yield event.plain_result("🐭 刷新密码缓存失败\n\n🔧 可能的解决方案:\n1. 检查网络连接是否正常\n2. 重新安装playwright依赖:\n   pip install playwright\n   playwright install chromium\n3. 稍后再试")
             else:
                 yield event.plain_result("🐭 刷新密码缓存时发生错误，请稍后再试")
+
+    @command("六套时间倍率")
+    async def set_menggong_time_multiplier(self, event: AstrMessageEvent):
+        """设置六套时间倍率（仅管理员）"""
+        # 检查用户是否为管理员
+        if event.role != "admin":
+            yield event.plain_result("❌ 此指令仅限管理员使用")
+            return
+        
+        try:
+            plain_text = event.message_str.strip()
+            args = plain_text.split()
+            
+            if len(args) < 2:
+                yield event.plain_result("❌ 参数不足\n\n📖 使用说明:\n• 六套时间倍率 [倍率] - 设置六套时间倍率\n\n💡 示例:\n• 六套时间倍率 2.0 - 设置2倍时长倍率\n• 六套时间倍率 0.5 - 设置0.5倍时长倍率")
+                return
+            
+            try:
+                time_multiplier = float(args[1])
+            except ValueError:
+                yield event.plain_result("❌ 倍率必须是数字")
+                return
+            
+            if time_multiplier <= 0:
+                yield event.plain_result("❌ 倍率必须大于0")
+                return
+            
+            if time_multiplier > 10.0:
+                yield event.plain_result("❌ 倍率不能超过10.0")
+                return
+            
+            if time_multiplier < 0.1:
+                yield event.plain_result("❌ 倍率不能小于0.1")
+                return
+            
+            result = await self.touchi_tools.set_menggong_time_multiplier(time_multiplier)
+            yield event.plain_result(result)
+            
+        except Exception as e:
+            logger.error(f"设置六套时间时出错: {e}")
+            yield event.plain_result("❌ 设置六套时间失败，请重试")
+
+    @command("偷吃事件")
+    async def touchi_events_info(self, event: AstrMessageEvent):
+        """查看偷吃概率事件信息"""
+        allowed, error_msg = self._check_all_permissions(event)
+        if not allowed:
+            if error_msg:
+                yield event.plain_result(error_msg)
+            return
+        
+        try:
+            stats = self.touchi_tools.events.get_event_statistics()
+            
+            event_info = f"""🎲 偷吃概率事件统计 🎲
+
+📊 事件触发概率：
+• 🎯 正常偷吃: {stats['normal']}
+• 💎 获得残缺刘涛: {stats['broken_liutao']}
+• 💀 遇到天才少年被踢死: {stats['genius_kick']}
+• ⚖️ 排到天才少年被追缴: {stats['genius_fine']}
+• 🤦 遇到菜b队友: {stats['noob_teammate']}
+• 🏃 被追杀丢包撤离: {stats['hunted_escape']}
+• 🐭 遇到路人鼠鼠: {stats['passerby_mouse']}
+• 🎲 总事件概率: {stats['total_event']}
+
+📝 事件详细说明：
+
+💎 【残缺刘涛】
+• 概率: {stats['broken_liutao']}
+• 效果: 额外获得残缺的刘涛
+• 奖励: 激活1分钟六套加成时间
+• 特殊: 期间红色和金色物品概率大幅提升
+
+💀 【天才少年踢死】
+• 概率: {stats['genius_kick']}
+• 效果: 展示偷吃结果但不计入数据库
+• 惩罚: 清空所有物品和仓库价值
+• 提示: 重新开始收集之旅
+
+⚖️ 【天才少年追缴】
+• 概率: {stats['genius_fine']}
+• 效果: 正常获得物品
+• 惩罚: 被追缴30万哈夫币
+• 备注: 哈夫币可以为负数
+
+🤦 【菜b队友】
+• 概率: {stats['noob_teammate']}
+• 效果: 正常获得物品
+• 惩罚: 撤离时间翻倍，下次偷吃冷却时间增加一倍
+• 备注: 影响下次偷吃的等待时间
+
+🏃 【被追杀丢包撤离】
+• 概率: {stats['hunted_escape']}
+• 效果: 正常获得本次物品
+• 惩罚: 只能保留小尺寸物品(1x1,1x2,2x1,1x3,3x1)
+• 备注: 删除收藏中的大尺寸物品并重新计算仓库价值
+
+🐭 【路人鼠鼠】
+• 概率: {stats['passerby_mouse']}
+• 效果: 正常获得物品
+• 奖励: 获得金色物品，格子扩展到最大(7x7)
+• 备注: 特勤处等级直接提升到最高级
+
+💡 提示：事件在每次偷吃时独立计算概率"""
+            
+            yield event.plain_result(event_info)
+            
+        except Exception as e:
+            logger.error(f"获取偷吃事件信息时出错: {e}")
+            yield event.plain_result("❌ 获取偷吃事件信息失败，请重试")
