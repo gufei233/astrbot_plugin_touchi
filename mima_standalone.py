@@ -33,15 +33,11 @@ class Logger:
 logger = Logger()
 
 class AcgIceSJZApi:
-    """
-    acg ice 的api调用
-    """
 
     def __init__(self):
         self.url = {
             "zb_ss": "https://www.acgice.com/sjz/v/zb_ss",
             "index": "https://www.acgice.com/sjz/v/index",
-            "item_list": "https://www.acgice.com/sjz/v/%s",
         }
         self.p = async_playwright()
 
