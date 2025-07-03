@@ -453,7 +453,7 @@ def render_safe_layout_gif(placed_items, start_x, start_y, region_width, region_
                 center_y = (y0 + y1) // 2
                 
                 # 计算转圈动画的参数，使用固定半径确保大小格物品轨迹一致
-                radius = cell_size // 6  # 缩小圆圈半径，让转圈轨迹更小
+                radius = cell_size // 8  # 缩小圆圈半径，让转圈轨迹更小
                 
                 # 使用 sousuo.png 图片代替弧线进行转圈动画
                 sousuo_path = os.path.join(expressions_dir, "sousuo.png")
@@ -563,6 +563,12 @@ def generate_safe_image(menggong_mode=False, grid_size=2, time_multiplier=1.0, g
     safe_frames = render_safe_layout_gif(placed_items, start_x, start_y, region_width, region_height, grid_size)
     highest_level = get_highest_level(placed_items)
     
+    # 计算总价值
+    total_value = sum(placed["item"]["value"] for placed in placed_items)
+    
+    # 检查是否有金色物品
+    has_gold_items = any(placed["item"]["level"] == "gold" for placed in placed_items)
+    
     # 计算动画完成的帧数（所有物品显示完成的时间点）
     frames_per_item = 8  # 与render_safe_layout_gif中的值保持一致
     
@@ -582,7 +588,17 @@ def generate_safe_image(menggong_mode=False, grid_size=2, time_multiplier=1.0, g
     # 加载eating.gif和最终表情图片
     eating_path = expressions.get("eating")
     expression_map = {"gold": "happy", "red": "eat"}
-    final_expression = expression_map.get(highest_level, "cry")
+    
+    # 表情选择逻辑：优先级为红色>金色>高价值无金色>其他
+    if highest_level == "red":
+        final_expression = "eat"
+    elif highest_level == "gold":
+        final_expression = "happy"
+    elif total_value > 300000 and not has_gold_items:
+        final_expression = "happy"  # 价值大于300000且没有金色物品时使用happy
+    else:
+        final_expression = "cry"
+    
     final_expr_path = expressions.get(final_expression)
     
     if not eating_path or not final_expr_path:
