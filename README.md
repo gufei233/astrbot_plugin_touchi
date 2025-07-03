@@ -8,12 +8,6 @@
 
 使用自定义戳一戳配合此插件效果更好哦  预计更新  曼德尔砖 抽红皮等 点个⭐ 更新有动力！
 
-**功能出错时 可能需要安装的依赖**
-
-pip install playwright beautifulsoup4 Pillow httpx aiosqlite
-
-playwright install chromium
-
 安装方法
 将插件文件夹 astrbot_plugin_touchi 放入 AstrBot 的 data/plugins/ 目录
 ![Screenshot_20250623_162718](https://github.com/user-attachments/assets/b2c0cc22-7d12-491e-bbf7-9955da949aa0)
