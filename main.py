@@ -1,7 +1,5 @@
 import os
 import asyncio
-import subprocess
-import sys
 import aiosqlite  # Import the standard SQLite library
 from datetime import datetime
 from astrbot.api.event import AstrMessageEvent
@@ -10,80 +8,22 @@ from astrbot.api import logger, AstrBotConfig
 from astrbot.api.event.filter import command
 from .core.touchi_tools import TouchiTools
 from .core.tujian import TujianTools
-from .mima import MimaTools
 
-@register("astrbot_plugin_touchi", "touchi", "这是一个为 AstrBot 开发的鼠鼠偷吃插件，增加了图鉴特勤处鼠鼠榜功能", "2.4.2")
+@register("astrbot_plugin_touchi", "touchi", "这是一个为 AstrBot 开发的鼠鼠偷吃插件，增加了图鉴特勤处鼠鼠榜功能", "2.4.3")
 class Main(Star):
     @classmethod
     def info(cls):
         return {
             "name": "astrbot_plugin_touchi",
-            "version": "2.4.2",
+            "version": "2.4.3",
             "description": "这是一个为 AstrBot 开发的鼠鼠偷吃插件，增加了图鉴特勤处刘涛功能",
             "author": "sa1guu"
         }
     
-    @staticmethod
-    def _check_and_install_dependencies():
-        """检查并自动安装所需依赖"""
-        required_packages = [
-            'playwright',
-            'beautifulsoup4', 
-            'Pillow',
-            'httpx',
-            'aiosqlite'
-        ]
-        
-        missing_packages = []
-        
-        for package in required_packages:
-            try:
-                __import__(package)
-            except ImportError:
-                # 特殊处理一些包名映射
-                if package == 'beautifulsoup4':
-                    try:
-                        __import__('bs4')
-                        continue
-                    except ImportError:
-                        pass
-                elif package == 'Pillow':
-                    try:
-                        __import__('PIL')
-                        continue
-                    except ImportError:
-                        pass
-                missing_packages.append(package)
-        
-        if missing_packages:
-            logger.info(f"检测到缺失依赖: {', '.join(missing_packages)}，正在自动安装...")
-            try:
-                for package in missing_packages:
-                    logger.info(f"正在安装 {package}...")
-                    subprocess.check_call([sys.executable, '-m', 'pip', 'install', package, '-i', 'https://pypi.tuna.tsinghua.edu.cn/simple'])
-                    logger.info(f"{package} 安装成功")
-                
-                # 检查是否需要安装playwright浏览器
-                if 'playwright' in missing_packages:
-                    logger.info("正在安装 playwright 浏览器...")
-                    subprocess.check_call([sys.executable, '-m', 'playwright', 'install', 'chromium'])
-                    logger.info("playwright 浏览器安装成功")
-                    
-                logger.info("所有依赖安装完成")
-            except subprocess.CalledProcessError as e:
-                logger.error(f"依赖安装失败: {e}")
-                logger.error("请手动安装依赖: pip install playwright beautifulsoup4 Pillow httpx aiosqlite -i https://pypi.tuna.tsinghua.edu.cn/simple")
-                logger.error("然后运行: playwright install chromium")
-            except Exception as e:
-                logger.error(f"依赖检查过程中出现错误: {e}")
-        else:
-            logger.info("所有依赖已满足")
+
 
     def __init__(self, context: Context, config: AstrBotConfig = None):
         super().__init__(context)
-        
-        # 检查并自动安装依赖
-        self._check_and_install_dependencies()
         
         self.config = config or {}
         self.enable_touchi = self.config.get("enable_touchi", True)
@@ -119,7 +59,6 @@ class Main(Star):
         )
 
         self.tujian_tools = TujianTools(db_path=self.db_path)
-        self.mima_tools = MimaTools()
 
     async def _initialize_database(self):
         """Initializes the database and creates the table if it doesn't exist."""
@@ -547,11 +486,22 @@ class Main(Star):
             return
         
         try:
-            result = await self.mima_tools.get_mima_info()
+            # 调用完全独立的 mima_standalone.py
+            from .mima_standalone import get_mima_async
+            result = await get_mima_async()
             yield event.plain_result(result)
+        except ImportError as e:
+            logger.error(f"导入playwright模块失败: {e}")
+            yield event.plain_result("🐭 获取密码功能需要playwright依赖\n\n🔧 解决方案:\n1. 检查网络连接\n2. 重新安装playwright:\n   pip install playwright\n   playwright install chromium")
         except Exception as e:
+            error_msg = str(e).lower()
             logger.error(f"获取密码信息时出错: {e}")
-            yield event.plain_result("🐭 获取密码信息时发生错误，请稍后再试")
+            
+            # 检查是否为网络或playwright相关错误
+            if any(keyword in error_msg for keyword in ['network', 'connection', 'timeout', 'playwright', 'browser', 'chromium']):
+                yield event.plain_result("🐭 获取密码信息失败\n\n🔧 可能的解决方案:\n1. 检查网络连接是否正常\n2. 重新安装playwright依赖:\n   pip install playwright\n   playwright install chromium\n3. 稍后再试")
+            else:
+                yield event.plain_result("🐭 获取密码信息时发生错误，请稍后再试")
 
     @command("刷新密码")
     async def refresh_mima(self, event: AstrMessageEvent):
@@ -562,8 +512,20 @@ class Main(Star):
             return
         
         try:
-            result = await self.mima_tools.refresh_mima_cache()
+            # 调用完全独立的 mima_standalone.py
+            from .mima_standalone import MimaTools
+            mima_tools = MimaTools()
+            result = await mima_tools.refresh_mima_cache()
             yield event.plain_result(result)
+        except ImportError as e:
+            logger.error(f"导入playwright模块失败: {e}")
+            yield event.plain_result("🐭 刷新密码功能需要playwright依赖\n\n🔧 解决方案:\n1. 检查网络连接\n2. 重新安装playwright:\n   pip install playwright\n   playwright install chromium")
         except Exception as e:
+            error_msg = str(e).lower()
             logger.error(f"刷新密码缓存时出错: {e}")
-            yield event.plain_result("🐭 刷新密码缓存时发生错误，请稍后再试")
+            
+            # 检查是否为网络或playwright相关错误
+            if any(keyword in error_msg for keyword in ['network', 'connection', 'timeout', 'playwright', 'browser', 'chromium']):
+                yield event.plain_result("🐭 刷新密码缓存失败\n\n🔧 可能的解决方案:\n1. 检查网络连接是否正常\n2. 重新安装playwright依赖:\n   pip install playwright\n   playwright install chromium\n3. 稍后再试")
+            else:
+                yield event.plain_result("🐭 刷新密码缓存时发生错误，请稍后再试")
