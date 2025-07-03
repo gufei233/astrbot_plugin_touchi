@@ -2,7 +2,7 @@
 
 这是一个为 AstrBot 开发的鼠鼠偷吃模拟器插件。本项目密码代码包含来自 [astrbot_plugin_deltaforce
 ] 的代码，遵循AGPL-3.0协议。
-原始作链接: [[GitHub链接或其他来源](https://github.com/UyNewNas)]
+原始作者链接: [[GitHub链接或其他来源](https://github.com/UyNewNas)]
 
 **使用指令：touchi 偷吃 图鉴指令：鼠鼠图鉴 冷却指令：鼠鼠冷却倍率 0.1-100  升级指令：特勤处升级  猛攻指令：六套猛攻  仓库指令：鼠鼠仓库 鼠鼠榜 欢迎加入鼠鼠偷吃测试群聊1011721929有想法有bug聊游戏都可以**
 
