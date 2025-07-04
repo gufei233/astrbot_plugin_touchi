@@ -325,18 +325,35 @@ def render_safe_layout_gif(placed_items, start_x, start_y, region_width, region_
     # 根据物品级别设置转圈时长（与render_safe_layout_gif中的函数保持一致）
     def get_rotation_duration(item_level):
         duration_map = {
-            "blue": 6,    # 蓝色最短
-            "purple": 8,  # 紫色稍长
-            "gold": 20,    # 金色更长
-            "red": 32     # 红色最长
+            "blue": 4,    # 蓝色最短
+            "purple": 6,  # 紫色稍长
+            "gold": 10,    # 金色更长
+            "red": 25     # 红色最长
         }
         return duration_map.get(item_level, 6)
     
-    # 计算总帧数，考虑每个物品的转圈时长
-    max_rotation_duration = max([get_rotation_duration(placed["item"]["level"]) for placed in placed_items], default=8)
-    # 确保总帧数足够显示所有物品，包括最长的转圈动画
-    min_frames_needed = len(placed_items) * frames_per_item + max_rotation_duration
-    total_frames = min_frames_needed + 15  # 最后加15帧静止
+    # 计算总帧数，考虑每个物品的转圈时长和进场动画时长
+    # 使用与动画逻辑一致的计算方式（去掉物品显示帧间隔）
+    entrance_duration = 2  # 进场动画时长（2帧）
+    
+    # 计算最后一个物品完成所有动画所需的帧数
+    if len(placed_items) > 0:
+        # 计算所有物品的累积转圈时间
+        total_rotation_time = 0
+        for i in range(len(placed_items)):
+            item_rotation_duration = get_rotation_duration(placed_items[i]["item"]["level"])
+            total_rotation_time += item_rotation_duration
+        
+        # 最后一个物品的转圈结束时间就是总转圈时间
+        last_rotation_end = total_rotation_time
+        
+        # 最后一个物品的进场动画结束时间
+        last_entrance_end = last_rotation_end + entrance_duration
+        
+        # 总帧数 = 最后一个物品完成所有动画的时间 + 静止时间
+        total_frames = last_entrance_end + 15
+    else:
+        total_frames = 30  # 如果没有物品，默认30帧
     
     # Define item background colors (with transparency)
     background_colors = {
@@ -388,9 +405,20 @@ def render_safe_layout_gif(placed_items, start_x, start_y, region_width, region_
         overlay_draw = ImageDraw.Draw(overlay)
         
         # 计算当前应该显示的物品数量
-        current_item_count = min(len(placed_items), (frame_idx // frames_per_item) + 1)
-        if frame_idx >= len(placed_items) * frames_per_item:
-            current_item_count = len(placed_items)  # 最后几帧显示所有物品
+        # 物品在其转圈动画开始时才被认为是"显示"的
+        current_item_count = 0
+        total_rotation_time = 0
+        for i in range(len(placed_items)):
+            # 转圈开始帧直接等于累积转圈时间
+            rotation_start_frame = total_rotation_time
+            if frame_idx >= rotation_start_frame:
+                current_item_count = i + 1
+            else:
+                break
+            # 累加当前物品的转圈时长，实现紧密连接
+            item = placed_items[i]["item"]
+            item_rotation_duration = get_rotation_duration(item["level"])
+            total_rotation_time += item_rotation_duration
         
         # 绘制未显示物品的黑色阴影线遮罩
         for i in range(current_item_count, len(placed_items)):
@@ -398,16 +426,68 @@ def render_safe_layout_gif(placed_items, start_x, start_y, region_width, region_
             x0, y0 = placed["x"] * cell_size, placed["y"] * cell_size
             x1, y1 = x0 + placed["width"] * cell_size, y0 + placed["height"] * cell_size
             
-            # 绘制黑色半透明遮罩
-            overlay_draw.rectangle([x0, y0, x1, y1], fill=(0, 0, 0, 120))
+            # 绘制黑色半透明遮罩（调淡）
+            overlay_draw.rectangle([x0, y0, x1, y1], fill=(0, 0, 0, 80))
             
-            # 绘制网格状阴影线纹理
+            # 绘制网格状阴影线纹理（调淡）
             for y in range(int(y0), int(y1), 6):
-                overlay_draw.line([(int(x0), y), (int(x1), y)], fill=(0, 0, 0, 120), width=1)
+                overlay_draw.line([(int(x0), y), (int(x1), y)], fill=(0, 0, 0, 80), width=1)
             for x in range(int(x0), int(x1), 6):
-                overlay_draw.line([(x, int(y0)), (x, int(y1))], fill=(0, 0, 0, 120), width=1)
+                overlay_draw.line([(x, int(y0)), (x, int(y1))], fill=(0, 0, 0, 80), width=1)
+            
+            # 在遮罩上方叠加向左倾斜45度的平行灰色斜线
+            line_spacing = 15  # 斜线间距（统一为15）
+            line_color = (128, 128, 128, 150)  # 灰色
+            line_width = 2  # 斜线粗细（增加）
+            border_color = (80, 80, 80, 180)   # 更深的边框颜色
+            border_width = 1   # 边框宽度
+            
+            # 绘制矩形边框
+            overlay_draw.rectangle([int(x0), int(y0), int(x1), int(y1)], outline=border_color, width=border_width)
+            
+            # 计算需要绘制的斜线范围
+            width = int(x1 - x0)
+            height = int(y1 - y0)
+            diagonal_length = int(math.sqrt(width**2 + height**2))
+            
+            # 绘制向左倾斜45度的平行斜线
+            # 使用更大的范围确保完全覆盖
+            for line_idx in range(-width - height, width + height, line_spacing):
+                # 计算斜线穿过矩形的所有可能交点
+                # 斜线方程: y - y0 = -1 * (x - (x0 + line_idx))
+                # 即: y = -x + (x0 + line_idx + y0)
+                
+                # 计算与四条边的交点
+                intersections = []
+                
+                # 与左边界 x = x0 的交点
+                y_left = -(int(x0)) + (int(x0) + line_idx + int(y0))
+                if int(y0) <= y_left <= int(y1):
+                    intersections.append((int(x0), int(y_left)))
+                
+                # 与右边界 x = x1 的交点
+                y_right = -(int(x1)) + (int(x0) + line_idx + int(y0))
+                if int(y0) <= y_right <= int(y1):
+                    intersections.append((int(x1), int(y_right)))
+                
+                # 与上边界 y = y0 的交点
+                x_top = (int(x0) + line_idx + int(y0)) - int(y0)
+                if int(x0) <= x_top <= int(x1):
+                    intersections.append((int(x_top), int(y0)))
+                
+                # 与下边界 y = y1 的交点
+                x_bottom = (int(x0) + line_idx + int(y0)) - int(y1)
+                if int(x0) <= x_bottom <= int(x1):
+                    intersections.append((int(x_bottom), int(y1)))
+                
+                # 如果有两个交点，绘制线段
+                if len(intersections) >= 2:
+                    # 取前两个交点
+                    start_point = intersections[0]
+                    end_point = intersections[1]
+                    overlay_draw.line([start_point, end_point], fill=line_color, width=line_width)
         
-        # 绘制已显示的物品
+        # 绘制已显示物品
         for i in range(current_item_count):
             placed = placed_items[i]
             item = placed["item"]
@@ -420,27 +500,91 @@ def render_safe_layout_gif(placed_items, start_x, start_y, region_width, region_
             # 为每个物品添加转圈动画效果，根据级别调整时长
             item_rotation_duration = get_rotation_duration(item["level"])
             
-            # 计算该物品开始显示的帧数
-            item_start_frame = i * frames_per_item
+            # 判断是否在转圈动画期间
+            # 优化时序：去掉物品显示帧间隔，让转圈动画紧密连接
+            # 计算全局转圈时序：每个物品的转圈开始时间 = 前面所有物品的累积转圈时间
+            entrance_duration = 2  # 进场动画时长
+            total_previous_rotation_time = 0
+            for j in range(i):
+                if j < len(placed_items):
+                    prev_item = placed_items[j]["item"]
+                    prev_rotation_duration = get_rotation_duration(prev_item["level"])
+                    # 累积前面所有物品的转圈时间，实现紧密连接
+                    total_previous_rotation_time += prev_rotation_duration
             
-            # 判断是否在转圈动画期间 - 只有当前正在显示的物品才转圈
-            is_rotating = (frame_idx >= item_start_frame and 
-                          frame_idx < item_start_frame + item_rotation_duration and
-                          i == current_item_count - 1)  # 确保只有当前物品转圈
+            # 当前物品的转圈开始时间（直接等于累积转圈时间）
+            rotation_start_frame = total_previous_rotation_time
+            rotation_end_frame = rotation_start_frame + item_rotation_duration
+            
+            is_rotating = (frame_idx >= rotation_start_frame and 
+                          frame_idx < rotation_end_frame and
+                          i < current_item_count)
             
             if is_rotating:
                 # 转圈动画期间，先绘制阴影遮罩，再绘制转圈效果
-                # 绘制黑色半透明遮罩
-                overlay_draw.rectangle([x0, y0, x1, y1], fill=(0, 0, 0, 120))
+                # 绘制黑色半透明遮罩（调淡）
+                overlay_draw.rectangle([x0, y0, x1, y1], fill=(0, 0, 0, 80))
                 
-                # 绘制网格状阴影线纹理
+                # 绘制网格状阴影线纹理（调淡）
                 for y in range(int(y0), int(y1), 6):
-                    overlay_draw.line([(int(x0), y), (int(x1), y)], fill=(0, 0, 0, 120), width=1)
+                    overlay_draw.line([(int(x0), y), (int(x1), y)], fill=(0, 0, 0, 80), width=1)
                 for x in range(int(x0), int(x1), 6):
-                    overlay_draw.line([(x, int(y0)), (x, int(y1))], fill=(0, 0, 0, 120), width=1)
+                    overlay_draw.line([(x, int(y0)), (x, int(y1))], fill=(0, 0, 0, 80), width=1)
+                
+                # 在遮罩上方叠加向左倾斜45度的平行灰色斜线
+                line_spacing = 15  # 斜线间距（统一为15）
+                line_color = (128, 128, 128, 150)  # 灰色
+                line_width = 2  # 斜线粗细（增加）
+                border_color = (80, 80, 80, 180)   # 更深的边框颜色
+                border_width = 1   # 边框宽度
+                
+                # 绘制矩形边框
+                overlay_draw.rectangle([int(x0), int(y0), int(x1), int(y1)], outline=border_color, width=border_width)
+                
+                # 计算需要绘制的斜线范围
+                width = int(x1 - x0)
+                height = int(y1 - y0)
+                diagonal_length = int(math.sqrt(width**2 + height**2))
+                
+                # 绘制向左倾斜45度的平行斜线
+                # 使用更大的范围确保完全覆盖
+                for line_offset in range(-width - height, width + height, line_spacing):
+                    # 计算斜线穿过矩形的所有可能交点
+                    # 斜线方程: y - y0 = -1 * (x - (x0 + line_offset))
+                    # 即: y = -x + (x0 + line_offset + y0)
+                    
+                    # 计算与四条边的交点
+                    intersections = []
+                    
+                    # 与左边界 x = x0 的交点
+                    y_left = -(int(x0)) + (int(x0) + line_offset + int(y0))
+                    if int(y0) <= y_left <= int(y1):
+                        intersections.append((int(x0), int(y_left)))
+                    
+                    # 与右边界 x = x1 的交点
+                    y_right = -(int(x1)) + (int(x0) + line_offset + int(y0))
+                    if int(y0) <= y_right <= int(y1):
+                        intersections.append((int(x1), int(y_right)))
+                    
+                    # 与上边界 y = y0 的交点
+                    x_top = (int(x0) + line_offset + int(y0)) - int(y0)
+                    if int(x0) <= x_top <= int(x1):
+                        intersections.append((int(x_top), int(y0)))
+                    
+                    # 与下边界 y = y1 的交点
+                    x_bottom = (int(x0) + line_offset + int(y0)) - int(y1)
+                    if int(x0) <= x_bottom <= int(x1):
+                        intersections.append((int(x_bottom), int(y1)))
+                    
+                    # 如果有两个交点，绘制线段
+                    if len(intersections) >= 2:
+                        # 取前两个交点
+                        start_point = intersections[0]
+                        end_point = intersections[1]
+                        overlay_draw.line([start_point, end_point], fill=line_color, width=line_width)
                 
                 # 计算转圈动画参数
-                rotation_frame = (frame_idx - item_start_frame) % item_rotation_duration
+                rotation_frame = (frame_idx - rotation_start_frame) % item_rotation_duration
                 # 根据转圈时长调整角速度，确保sousuo.png移动速度一致
                 # 使用基准时长20帧来标准化角速度，并增加速度倍数
                 base_duration = 20
@@ -453,15 +597,15 @@ def render_safe_layout_gif(placed_items, start_x, start_y, region_width, region_
                 center_y = (y0 + y1) // 2
                 
                 # 计算转圈动画的参数，使用固定半径确保大小格物品轨迹一致
-                radius = cell_size // 8  # 缩小圆圈半径，让转圈轨迹更小
+                radius = cell_size // 14  # 缩小圆圈半径，让转圈轨迹更小
                 
                 # 使用 sousuo.png 图片代替弧线进行转圈动画
                 sousuo_path = os.path.join(expressions_dir, "sousuo.png")
                 if os.path.exists(sousuo_path):
                     try:
                         with Image.open(sousuo_path).convert("RGBA") as sousuo_img:
-                            # 调整 sousuo.png 的大小，使用固定大小确保一致性
-                            sousuo_size = 50  # 固定大小，不依赖半径
+                            # 调整 sousuo.png 的大小，增大图标尺寸
+                            sousuo_size = 60 # 增大图标大小，从50增加到65
                             sousuo_img = sousuo_img.resize((sousuo_size, sousuo_size), Image.LANCZOS)
                             
                             # 计算图片中心点的转圈轨迹位置
@@ -469,9 +613,12 @@ def render_safe_layout_gif(placed_items, start_x, start_y, region_width, region_
                             orbit_x = center_x + radius * math.cos(angle_rad)
                             orbit_y = center_y + radius * math.sin(angle_rad)
                             
-                            # 计算图片左上角位置（使图片中心在轨迹上）
-                            paste_x = int(orbit_x - sousuo_size // 2)
-                            paste_y = int(orbit_y - sousuo_size // 2)
+                            # 计算图片左上角位置，让60px sousuo.png的中心偏左上一点作为轨迹圆上的一点
+                            # 偏移量：向左上偏移图标大小的1/6
+                            offset_x = sousuo_size // 6  # 向左偏移
+                            offset_y = sousuo_size // 6  # 向上偏移
+                            paste_x = int(orbit_x - sousuo_size // 2 + offset_x)
+                            paste_y = int(orbit_y - sousuo_size // 2 + offset_y)
                             
                             # 粘贴图片（保持图片方向不变）
                             overlay.paste(sousuo_img, (paste_x, paste_y), sousuo_img)
@@ -494,16 +641,95 @@ def render_safe_layout_gif(placed_items, start_x, start_y, region_width, region_
                     overlay_draw.arc(bbox, start_angle, end_angle, 
                                     fill=(255, 255, 255, 220), width=3)
             else:
-                # 转圈动画结束后，显示物品背景色和图片
-                # 绘制物品背景
-                overlay_draw.rectangle([x0, y0, x1, y1], fill=bg_color)
+                # 转圈动画结束后，显示物品背景色和图片，添加从大变小的进场效果
                 
-                # 绘制物品图片
+                # 计算进场动画参数
+                entrance_duration = 2  # 进场动画时长 
+                # 进场动画在转圈动画结束后开始，使用新的转圈时序
+                entrance_start_frame = rotation_end_frame
+                entrance_frame = frame_idx - entrance_start_frame
+                
+                # 判断是否在进场动画期间
+                # 每个物品在转圈结束后都应该有进场动画
+                # entrance_frame >= 0 已经确保了转圈动画结束，无需重复判断
+                is_entrance_animation = (entrance_frame >= 0 and entrance_frame < entrance_duration)  # 转圈结束后立即播放进场动画
+                
+                if is_entrance_animation:
+                    # 进场动画
+                    # 使用线性缩放效果，不使用缓动
+                    progress = entrance_frame / entrance_duration
+                    # 线性进度，匀速缩放
+                    scale_factor = 1.5 - 0.5 * progress  # 从1.5缩放到1.0
+                else:
+                    # 进场动画结束，显示正常大小
+                    scale_factor = 1.0
+                
+                # 绘制色块动画效果（位于背景色上方、物品下方）
+                # 色块只在进场动画期间显示，进场动画结束后不再绘制
+                if is_entrance_animation:
+                    # 色块动画：从浅到深、从格子大小到1.2倍
+                    progress = entrance_frame / entrance_duration
+                    
+                    # 计算色块颜色：从背景色基础上由浅变深
+                    base_r, base_g, base_b, base_a = bg_color
+                    # 浅色：增加亮度（向255靠近）
+                    light_factor = 0.3  # 浅色程度，调整得不那么浅
+                    light_r = int(base_r + (255 - base_r) * light_factor)
+                    light_g = int(base_g + (255 - base_g) * light_factor)
+                    light_b = int(base_b + (255 - base_b) * light_factor)
+                    
+                    # 深色：降低亮度（向0靠近）
+                    dark_factor = 0.1  # 深色程度，调整得更深
+                    dark_r = int(base_r * dark_factor)
+                    dark_g = int(base_g * dark_factor)
+                    dark_b = int(base_b * dark_factor)
+                    
+                    # 根据进度插值颜色（从浅到深）
+                    current_r = int(light_r + (dark_r - light_r) * progress)
+                    current_g = int(light_g + (dark_g - light_g) * progress)
+                    current_b = int(light_b + (dark_b - light_b) * progress)
+                    current_a = int(base_a + (255 - base_a) * progress * 0.5)  # 透明度也逐渐增加
+                    
+                    # 计算色块大小：从格子大小到1.2倍
+                    start_scale = 1.0
+                    end_scale = 1.3
+                    current_scale = start_scale + (end_scale - start_scale) * progress
+                    
+                    # 计算色块位置和大小
+                    block_width = int((placed["width"] * cell_size) * current_scale)
+                    block_height = int((placed["height"] * cell_size) * current_scale)
+                    
+                    # 居中放置色块
+                    block_x = x0 + (placed["width"] * cell_size - block_width) // 2
+                    block_y = y0 + (placed["height"] * cell_size - block_height) // 2
+                    
+                    # 绘制色块
+                    overlay_draw.rectangle([block_x, block_y, block_x + block_width, block_y + block_height], 
+                                         fill=(current_r, current_g, current_b, current_a))
+                
+                # 绘制物品背景（只在进场动画结束后显示）
+                if not is_entrance_animation:
+                    overlay_draw.rectangle([x0, y0, x1, y1], fill=bg_color)
+                
+                # 绘制物品图片（应用缩放效果）
                 if i in item_images and item_images[i] is not None:
                     item_img = item_images[i]
-                    paste_x = x0 + (placed["width"] * cell_size - item_img.width) // 2
-                    paste_y = y0 + (placed["height"] * cell_size - item_img.height) // 2
-                    overlay.paste(item_img, (int(paste_x), int(paste_y)), item_img)
+                    
+                    if scale_factor != 1.0:
+                        # 应用缩放效果
+                        scaled_width = int(item_img.width * scale_factor)
+                        scaled_height = int(item_img.height * scale_factor)
+                        scaled_img = item_img.resize((scaled_width, scaled_height), Image.LANCZOS)
+                        
+                        # 计算缩放后的居中位置
+                        paste_x = x0 + (placed["width"] * cell_size - scaled_width) // 2
+                        paste_y = y0 + (placed["height"] * cell_size - scaled_height) // 2
+                        overlay.paste(scaled_img, (int(paste_x), int(paste_y)), scaled_img)
+                    else:
+                        # 正常大小显示
+                        paste_x = x0 + (placed["width"] * cell_size - item_img.width) // 2
+                        paste_y = y0 + (placed["height"] * cell_size - item_img.height) // 2
+                        overlay.paste(item_img, (int(paste_x), int(paste_y)), item_img)
                 
                 # 绘制物品边框
                 draw.rectangle([x0, y0, x1, y1], outline=ITEM_BORDER_COLOR, width=BORDER_WIDTH)
@@ -574,10 +800,10 @@ def generate_safe_image(menggong_mode=False, grid_size=2, time_multiplier=1.0, g
     
     # 使用与render_safe_layout_gif中相同的转圈时长计算逻辑
     duration_map = {
-        "blue": 6,    # 蓝色最短
-        "purple": 8,  # 紫色稍长
-        "gold": 20,    # 金色更长
-        "red": 32     # 红色最长
+        "blue": 4,    # 蓝色最短
+        "purple": 6,  # 紫色稍长
+        "gold": 10,    # 金色更长
+        "red": 25     # 红色最长
     }
     
     # 计算最长转圈时长
