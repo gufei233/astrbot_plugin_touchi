@@ -322,7 +322,7 @@ def render_safe_layout_gif(placed_items, start_x, start_y, region_width, region_
     frames_per_item = 8  # 每个物品显示时的帧数
     rotation_frames = 6  # 转圈动画帧数
     
-    # 根据物品级别设置转圈时长（与render_safe_layout_gif中的函数保持一致）
+    # 根据物品级别设置转圈时长（与下面的函数保持一致）
     def get_rotation_duration(item_level):
         duration_map = {
             "blue": 4,    # 蓝色最短
@@ -373,10 +373,10 @@ def render_safe_layout_gif(placed_items, start_x, start_y, region_width, region_
     # 根据物品级别设置转圈时长
     def get_rotation_duration(item_level):
         duration_map = {
-            "blue": 6,    # 蓝色最短
-            "purple": 8,  # 紫色稍长
-            "gold": 20,    # 金色更长
-            "red": 32     # 红色最长
+            "blue": 4,    # 蓝色最短
+            "purple": 6,  # 紫色稍长
+            "gold": 10,    # 金色更长
+            "red": 25     # 红色最长
         }
         return duration_map.get(item_level, 6)
     
