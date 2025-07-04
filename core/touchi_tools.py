@@ -385,6 +385,114 @@ class TouchiTools:
                     )) for item in placed_items)
                     final_items = placed_items
                 
+                # 如果触发丢包撤离事件，需要重新生成图片只显示小物品
+                elif event_triggered and event_type == "hunted_escape":
+                    # 使用过滤后的物品重新生成图片
+                    def generate_with_filtered_items():
+                        from .touchi import load_items, create_safe_layout, render_safe_layout_gif, get_highest_level, load_expressions
+                        from PIL import Image
+                        import os
+                        from datetime import datetime
+                        
+                        # 加载所有可用物品
+                        all_items = load_items()
+                        if not all_items:
+                            return None, []
+                        
+                        # 创建包含过滤后物品的特定物品列表
+                        specific_items = []
+                        
+                        # 添加过滤后的物品
+                        for filtered_item in final_items:
+                            item_name = filtered_item["item"]["base_name"]
+                            item_level = filtered_item["item"]["level"]
+                            for item in all_items:
+                                if item["base_name"] == item_name and item["level"] == item_level:
+                                    specific_items.append(item)
+                                    break
+                        
+                        # 使用当前格子大小重新布局
+                        from .touchi import place_items
+                        placed_items_new = place_items(specific_items, used_grid_size, used_grid_size, used_grid_size)
+                        
+                        # 生成图片
+                        safe_frames = render_safe_layout_gif(placed_items_new, 0, 0, used_grid_size, used_grid_size, used_grid_size)
+                        if not safe_frames:
+                            return None, []
+                        
+                        # 加载表情图片
+                        expressions = load_expressions()
+                        if not expressions:
+                            return None, []
+                        
+                        highest_level = get_highest_level(placed_items_new)
+                        eating_path = expressions.get("eating")
+                        expression_map = {"gold": "happy", "red": "eat"}
+                        final_expression = expression_map.get(highest_level, "cry")
+                        final_expr_path = expressions.get(final_expression)
+                        
+                        if not eating_path or not final_expr_path:
+                            return None, []
+                        
+                        # 生成最终图片
+                        expression_size = used_grid_size * 100
+                        
+                        # 加载eating.gif帧
+                        eating_frames = []
+                        with Image.open(eating_path) as eating_gif:
+                            for frame_idx in range(eating_gif.n_frames):
+                                eating_gif.seek(frame_idx)
+                                eating_frame = eating_gif.convert("RGBA")
+                                eating_frame = eating_frame.resize((expression_size, expression_size), Image.LANCZOS)
+                                eating_frames.append(eating_frame.copy())
+                        
+                        # 加载最终表情
+                        with Image.open(final_expr_path).convert("RGBA") as final_expr_img:
+                            final_expr_img = final_expr_img.resize((expression_size, expression_size), Image.LANCZOS)
+                            
+                            # 生成最终帧
+                            final_frames = []
+                            for frame_idx, safe_frame in enumerate(safe_frames):
+                                final_img = Image.new("RGB", (expression_size + safe_frame.width, safe_frame.height), (50, 50, 50))
+                                
+                                if frame_idx == 0:
+                                    current_expr = final_expr_img
+                                else:
+                                    eating_frame_idx = (frame_idx - 1) % len(eating_frames)
+                                    current_expr = eating_frames[eating_frame_idx]
+                                
+                                if current_expr.mode == 'RGBA':
+                                    final_img.paste(current_expr, (0, 0), current_expr)
+                                else:
+                                    final_img.paste(current_expr, (0, 0))
+                                
+                                final_img.paste(safe_frame, (expression_size, 0))
+                                
+                                # 应用缩放
+                                new_width = int(final_img.width * 0.7)
+                                new_height = int(final_img.height * 0.7)
+                                final_img = final_img.resize((new_width, new_height), Image.LANCZOS)
+                                
+                                final_frames.append(final_img)
+                        
+                        # 保存GIF
+                        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                        from .touchi import output_dir
+                        output_path = os.path.join(output_dir, f"safe_{timestamp}.gif")
+                        
+                        if final_frames:
+                            final_frames[0].save(
+                                output_path,
+                                save_all=True,
+                                append_images=final_frames[1:],
+                                duration=150,
+                                loop=0
+                            )
+                        
+                        return output_path, placed_items_new
+                    
+                    safe_image_path, placed_items = await loop.run_in_executor(None, generate_with_filtered_items)
+                
                 # 如果路人鼠鼠事件触发且有金色物品，添加金色物品并重新生成图片
                 if golden_item_path and event_type == "passerby_mouse":
                     # 添加金色物品到物品列表开头，使用正确的格式
