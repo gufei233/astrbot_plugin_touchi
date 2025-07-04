@@ -226,15 +226,41 @@ class TouchiEvents:
                 await self._recalculate_warehouse_value(db, user_id)
                 await db.commit()
             
+            # 过滤当前偷吃的物品，只保留小尺寸物品
+            filtered_items = []
+            current_items_removed = 0
+            
+            for placed_item in placed_items:
+                item = placed_item["item"]
+                item_base_name = item["base_name"]
+                item_size = self._extract_size_from_name(item_base_name)
+                
+                if item_size and item_size in allowed_sizes:
+                    # 保留小尺寸物品
+                    filtered_items.append(placed_item)
+                else:
+                    # 丢弃大尺寸物品
+                    current_items_removed += 1
+            
+            # 重新计算当前偷吃的总价值
+            filtered_value = 0
+            for item in filtered_items:
+                if "item" in item:
+                    item_data = item["item"]
+                    item_value = item_data.get("value", 0)
+                    filtered_value += item_value
+            
             # 创建事件消息
+            total_removed = items_removed + current_items_removed
             event_message = (
                 "🏃 特殊事件触发！\n"
                 "🔫 你被追杀到了丢包撤离点！\n"
                 "📦 只能保留小尺寸物品！\n"
-                f"💔 丢弃了 {items_removed} 件大尺寸物品！\n"
+                f"💔 丢弃了 {total_removed} 件大尺寸物品！\n"
+                f"📋 本次偷吃保留了 {len(filtered_items)} 件小物品！"
             )
             
-            return True, "hunted_escape", placed_items, total_value, event_message
+            return True, "hunted_escape", filtered_items, filtered_value, event_message
             
         except Exception as e:
             print(f"处理被追杀丢包撤离事件时出错: {e}")
