@@ -332,28 +332,18 @@ def render_safe_layout_gif(placed_items, start_x, start_y, region_width, region_
         }
         return duration_map.get(item_level, 6)
     
-    # 计算总帧数，考虑每个物品的转圈时长和进场动画时长
-    # 使用与动画逻辑一致的计算方式（去掉物品显示帧间隔）
-    entrance_duration = 2  # 进场动画时长（2帧）
-    
-    # 计算最后一个物品完成所有动画所需的帧数
+    # 计算总动画时长
     if len(placed_items) > 0:
-        # 计算所有物品的累积转圈时间
-        total_rotation_time = 0
+        # 计算所有物品的总搜索时长
+        total_search_time = 0
         for i in range(len(placed_items)):
             item_rotation_duration = get_rotation_duration(placed_items[i]["item"]["level"])
-            total_rotation_time += item_rotation_duration
+            total_search_time += item_rotation_duration
         
-        # 最后一个物品的转圈结束时间就是总转圈时间
-        last_rotation_end = total_rotation_time
-        
-        # 最后一个物品的进场动画结束时间
-        last_entrance_end = last_rotation_end + entrance_duration
-        
-        # 总帧数 = 最后一个物品完成所有动画的时间 + 静止时间
-        total_frames = last_entrance_end + 15
+        # 总动画时长 = 总搜索时长 + 15帧
+        total_frames = total_search_time + 15
     else:
-        total_frames = 30  # 如果没有物品，默认30帧
+        total_frames = 5 # 如果没有物品，默认30帧
     
     # Define item background colors (with transparency)
     background_colors = {
