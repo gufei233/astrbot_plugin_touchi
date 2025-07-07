@@ -9,13 +9,13 @@ from astrbot.api.event.filter import command
 from .core.touchi_tools import TouchiTools
 from .core.tujian import TujianTools
 
-@register("astrbot_plugin_touchi", "touchi", "这是一个为 AstrBot 开发的鼠鼠偷吃插件，增加了图鉴特勤处鼠鼠榜功能", "2.4.7")
+@register("astrbot_plugin_touchi", "touchi", "这是一个为 AstrBot 开发的鼠鼠偷吃插件，增加了图鉴特勤处鼠鼠榜功能", "2.4.8")
 class Main(Star):
     @classmethod
     def info(cls):
         return {
             "name": "astrbot_plugin_touchi",
-            "version": "2.4.7",
+            "version": "2.4.8",
             "description": "这是一个为 AstrBot 开发的鼠鼠偷吃插件，增加了图鉴特勤处刘涛功能",
             "author": "sa1guu"
         }
@@ -117,6 +117,17 @@ class Main(Star):
                     INSERT OR IGNORE INTO system_config (config_key, config_value) 
                     VALUES ('menggong_time_multiplier', '1.0')
                 """)
+                
+                # 添加用户最后一次偷吃记录表
+                await db.execute("""
+                    CREATE TABLE IF NOT EXISTS user_last_touchi (
+                        user_id TEXT PRIMARY KEY,
+                        items_json TEXT NOT NULL,
+                        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        jianshi_index INTEGER DEFAULT 0
+                    );
+                """)
+                
                 await db.commit()
             logger.info("偷吃插件数据库[collection.db]初始化成功。")
         except Exception as e:
@@ -592,6 +603,18 @@ class Main(Star):
             logger.error(f"设置六套时间时出错: {e}")
             yield event.plain_result("❌ 设置六套时间失败，请重试")
 
+    @command("检视")
+    async def jianshi(self, event: AstrMessageEvent):
+        """检视最后一次偷吃的物品"""
+        allowed, error_msg = self._check_all_permissions(event)
+        if not allowed:
+            if error_msg:
+                yield event.plain_result(error_msg)
+            return
+        
+        async for result in self.touchi_tools.jianshi_items(event):
+            yield result
+    
     @command("偷吃事件")
     async def touchi_events_info(self, event: AstrMessageEvent):
         """查看偷吃概率事件信息"""
@@ -646,7 +669,7 @@ class Main(Star):
 • 概率: {stats['hunted_escape']}
 • 效果: 正常获得本次物品
 • 惩罚: 只能保留小尺寸物品(1x1,1x2,2x1,1x3,3x1)
-• 备注: 删除收藏中的大尺寸物品并重新计算仓库价值
+
 
 🐭 【路人鼠鼠】
 • 概率: {stats['passerby_mouse']}
