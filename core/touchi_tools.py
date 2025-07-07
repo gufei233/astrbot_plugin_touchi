@@ -51,6 +51,10 @@ class TouchiTools:
         
         # 延迟结果存储
         self._delayed_result = None
+        
+        # 检视功能相关
+        self.jianshi_dir = os.path.join(current_dir, "jianshi")
+        os.makedirs(self.jianshi_dir, exist_ok=True)
     
     def set_multiplier(self, multiplier: float):
         if multiplier < 0.01 or multiplier > 100:
@@ -124,6 +128,8 @@ class TouchiTools:
         
         try:
             total_value = 0
+            items_for_jianshi = []
+            
             async with aiosqlite.connect(self.db_path) as db:
                 # 添加物品到收藏
                 for placed in placed_items:
@@ -132,6 +138,16 @@ class TouchiTools:
                     item_level = item["level"]
                     item_value = item.get("value", get_item_value(item_name))
                     total_value += item_value
+                    
+                    # 提取物品的唯一标识（最后一个下划线后的部分）
+                    parts = item_name.split('_')
+                    if len(parts) >= 3:
+                        unique_id = parts[-1]  # 获取最后一部分作为唯一标识
+                        items_for_jianshi.append({
+                            'item_name': item_name,
+                            'unique_id': unique_id,
+                            'item_level': item_level
+                        })
                     
                     await db.execute(
                         "INSERT OR IGNORE INTO user_touchi_collection (user_id, item_name, item_level) VALUES (?, ?, ?)",
@@ -147,6 +163,16 @@ class TouchiTools:
                     "UPDATE user_economy SET warehouse_value = warehouse_value + ? WHERE user_id = ?",
                     (total_value, user_id)
                 )
+                
+                # 记录最后一次偷吃的物品（用于检视功能）
+                if items_for_jianshi:
+                    import json
+                    items_json = json.dumps(items_for_jianshi)
+                    await db.execute(
+                        "INSERT OR REPLACE INTO user_last_touchi (user_id, items_json, jianshi_index) VALUES (?, ?, 0)",
+                        (user_id, items_json)
+                    )
+                
                 await db.commit()
             logger.info(f"用户 {user_id} 成功记录了 {len(placed_items)} 个物品到[collection.db]，总价值: {total_value}。")
         except Exception as e:
@@ -1265,3 +1291,63 @@ class TouchiTools:
         except Exception as e:
             logger.error(f"设置特勤处基础等级时出错: {e}")
             return f"❌ 设置失败: {str(e)}"
+    
+    async def jianshi_items(self, event):
+        """检视最后一次偷吃的物品"""
+        user_id = event.get_sender_id()
+        
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                # 获取用户最后一次偷吃的物品记录
+                cursor = await db.execute(
+                    "SELECT items_json, jianshi_index FROM user_last_touchi WHERE user_id = ?",
+                    (user_id,)
+                )
+                result = await cursor.fetchone()
+                
+                if not result:
+                    yield event.plain_result("🐭 你还没有偷吃过任何物品，无法检视")
+                    return
+                
+                items_json, current_index = result
+                import json
+                items_list = json.loads(items_json)
+                
+                if not items_list:
+                    yield event.plain_result("🐭 没有可检视的物品")
+                    return
+                
+                # 筛选出有对应检视gif的物品
+                jianshi_items = []
+                for item in items_list:
+                    unique_id = item['unique_id']
+                    gif_path = os.path.join(self.jianshi_dir, f"{unique_id}.gif")
+                    if os.path.exists(gif_path):
+                        jianshi_items.append({
+                            'item_name': item['item_name'],
+                            'unique_id': unique_id,
+                            'item_level': item['item_level'],
+                            'gif_path': gif_path
+                        })
+                
+                if not jianshi_items:
+                    yield event.plain_result("🐭 最后一次偷吃的物品中没有可检视的物品")
+                    return
+                
+                # 获取当前要检视的物品（按顺序轮流）
+                item_to_show = jianshi_items[current_index % len(jianshi_items)]
+                
+                # 更新检视索引，准备下次检视
+                next_index = (current_index + 1) % len(jianshi_items)
+                await db.execute(
+                    "UPDATE user_last_touchi SET jianshi_index = ? WHERE user_id = ?",
+                    (next_index, user_id)
+                )
+                await db.commit()
+                
+                # 发送检视gif（仅发送gif，不附带文字）
+                yield event.image_result(item_to_show['gif_path'])
+                
+        except Exception as e:
+            logger.error(f"检视物品时出错: {e}")
+            yield event.plain_result("🐭 检视失败，请重试")
