@@ -198,33 +198,9 @@ class TouchiEvents:
     async def _handle_hunted_escape_event(self, event, user_id, placed_items, total_value):
         """处理被追杀丢包撤离事件"""
         try:
-            # 删除用户收藏中的大尺寸物品，只保留小尺寸物品
+            # 不删除数据库中的物品，只是不保留本次大物品记录到库中
+            # 以前的物品还是要保留的
             allowed_sizes = ['1x1', '1x2', '2x1', '1x3', '3x1']
-            
-            async with aiosqlite.connect(self.db_path) as db:
-                # 获取用户所有物品
-                cursor = await db.execute(
-                    "SELECT item_name FROM user_touchi_collection WHERE user_id = ?",
-                    (user_id,)
-                )
-                user_items = await cursor.fetchall()
-                
-                # 删除不符合尺寸要求的物品
-                items_removed = 0
-                for item_row in user_items:
-                    item_name = item_row[0]
-                    # 从物品名称中提取尺寸信息
-                    item_size = self._extract_size_from_name(item_name)
-                    if item_size and item_size not in allowed_sizes:
-                        await db.execute(
-                            "DELETE FROM user_touchi_collection WHERE user_id = ? AND item_name = ?",
-                            (user_id, item_name)
-                        )
-                        items_removed += 1
-                
-                # 重新计算仓库价值
-                await self._recalculate_warehouse_value(db, user_id)
-                await db.commit()
             
             # 过滤当前偷吃的物品，只保留小尺寸物品
             filtered_items = []
@@ -239,7 +215,7 @@ class TouchiEvents:
                     # 保留小尺寸物品
                     filtered_items.append(placed_item)
                 else:
-                    # 丢弃大尺寸物品
+                    # 丢弃大尺寸物品（不记录到数据库）
                     current_items_removed += 1
             
             # 重新计算当前偷吃的总价值
@@ -251,13 +227,13 @@ class TouchiEvents:
                     filtered_value += item_value
             
             # 创建事件消息
-            total_removed = items_removed + current_items_removed
             event_message = (
                 "🏃 特殊事件触发！\n"
                 "🔫 你被追杀到了丢包撤离点！\n"
                 "📦 只能保留小尺寸物品！\n"
-                f"💔 丢弃了 {total_removed} 件大尺寸物品！\n"
-                f"📋 本次偷吃保留了 {len(filtered_items)} 件小物品！"
+                f"💔 本次丢弃了 {current_items_removed} 件大尺寸物品！\n"
+                f"📋 本次偷吃保留了 {len(filtered_items)} 件小物品！\n"
+                "🏛️ 以前的物品仍然保留在仓库中！"
             )
             
             return True, "hunted_escape", filtered_items, filtered_value, event_message
