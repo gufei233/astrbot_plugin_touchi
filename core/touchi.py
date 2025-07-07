@@ -72,8 +72,8 @@ ITEM_VALUES = {
     "red_3x2_dainnao": 3786322, "red_3x2_paodan": 1440722, "red_3x2_zhuangjiadianchi": 1339889,
     "red_3x3_banzi": 2111841, "red_3x3_chaosuan": 2003197, "red_3x3_fanyinglu": 2147262,
     "red_3x3_huxiji": 10962096, "red_3x3_tanke": 2113480, "red_3x3_wanjinleiguan": 3646401,
-    "red_3x3_zongheng": 3337324, "red_3x4_daopian": 1427562, "red_3x4_ranliao": 1400000,
-    "red_4x1_huatang": 676493, "red_4x3_cipanzhenlie": 1662799, "red_4x3_dongdidianchi": 1409728
+    "red_3x3_zongheng": 3337324, "red_3x4_daopian": 1427562, "red_3x4_ranliao": 1400000,"red_1x1_liangzi":279405,"red_1x1_shuju":257498,"red_1x1_lei":19930867,
+    "red_4x1_huatang": 676493, "red_4x3_cipanzhenlie": 1662799, "red_4x3_dongdidianchi": 1409728,"red_2x2_diantai":996970,"red_3x2_heixiazi":1750900
 }
 
 # 稀有物品列表 - 概率为原来的三分之一
@@ -84,7 +84,7 @@ RARE_ITEMS = {
 
 # 超稀有物品列表 - 概率为0.0009%
 ULTRA_RARE_ITEMS = {
-    "red_1x1_xin"
+    "red_1x1_xin","red_1x1_lei"
 }
 
 def get_item_value(item_name):
