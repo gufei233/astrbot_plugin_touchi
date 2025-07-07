@@ -1314,7 +1314,7 @@ class TouchiTools:
                 items_list = json.loads(items_json)
                 
                 if not items_list:
-                    yield event.plain_result("🐭 没有可检视的物品")
+                    yield event.plain_result("🐭 没有可检视的物品，或没有下载检视资源")
                     return
                 
                 # 筛选出有对应检视gif的物品
@@ -1331,7 +1331,7 @@ class TouchiTools:
                         })
                 
                 if not jianshi_items:
-                    yield event.plain_result("🐭 最后一次偷吃的物品中没有可检视的物品")
+                    yield event.plain_result("🐭 最后一次偷吃没有可检视的物品，或没有下载检视资源")
                     return
                 
                 # 获取当前要检视的物品（按顺序轮流）
@@ -1350,4 +1350,4 @@ class TouchiTools:
                 
         except Exception as e:
             logger.error(f"检视物品时出错: {e}")
-            yield event.plain_result("🐭 检视失败，请重试")
+            yield event.plain_result("🐭 检视失败，重试或检查检视资源是否完整")
