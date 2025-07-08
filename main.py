@@ -8,14 +8,15 @@ from astrbot.api import logger, AstrBotConfig
 from astrbot.api.event.filter import command
 from .core.touchi_tools import TouchiTools
 from .core.tujian import TujianTools
+from .core.zhou import ZhouGame
 
-@register("astrbot_plugin_touchi", "touchi", "这是一个为 AstrBot 开发的鼠鼠偷吃插件，增加了图鉴特勤处鼠鼠榜功能", "2.4.9")
+@register("astrbot_plugin_touchi", "touchi", "这是一个为 AstrBot 开发的鼠鼠偷吃插件，增加了图鉴特勤处鼠鼠榜功能", "2.5.1")
 class Main(Star):
     @classmethod
     def info(cls):
         return {
             "name": "astrbot_plugin_touchi",
-            "version": "2.4.9",
+            "version": "2.5.1",
             "description": "这是一个为 AstrBot 开发的鼠鼠偷吃插件，增加了图鉴特勤处刘涛功能",
             "author": "sa1guu"
         }
@@ -42,7 +43,8 @@ class Main(Star):
         self.enable_static_image = self.config.get("enable_static_image", False)
         
         # Define path for the plugin's private database in its data directory
-        data_dir = StarTools.get_data_dir("astrbot_plugin_touchi")
+        # 使用正确的数据库路径
+        data_dir = "C:\\powershell\\AstrBot\\data\\plugin_data\\astrbot_plugin_touchi"
         os.makedirs(data_dir, exist_ok=True)
         self.db_path = os.path.join(data_dir, "collection.db")
         
@@ -59,6 +61,11 @@ class Main(Star):
         )
 
         self.tujian_tools = TujianTools(db_path=self.db_path)
+        
+        # 初始化洲了个洲游戏
+        items_dir = os.path.join(os.path.dirname(__file__), "core", "items")
+        output_dir = os.path.join(os.path.dirname(__file__), "core", "output")
+        self.zhou_game = ZhouGame(self.db_path, items_dir, output_dir)
 
     async def _initialize_database(self):
         """Initializes the database and creates the table if it doesn't exist."""
@@ -129,6 +136,10 @@ class Main(Star):
                 """)
                 
                 await db.commit()
+            
+            # 初始化洲了个洲游戏表
+            await self.zhou_game.init_game_tables()
+            
             logger.info("偷吃插件数据库[collection.db]初始化成功。")
         except Exception as e:
             logger.error(f"初始化偷吃插件数据库[collection.db]时出错: {e}")
@@ -216,6 +227,39 @@ class Main(Star):
         
         async for result in self.touchi_tools.get_touchi(event):
             yield result
+        
+        # 检查是否触发了洲了个洲游戏
+        if hasattr(self.touchi_tools, '_delayed_result') and self.touchi_tools._delayed_result:
+            delayed_result = self.touchi_tools._delayed_result
+            if delayed_result.get('zhou_triggered', False):
+                try:
+                    user_id = event.get_sender_id()
+                    # 启动偷吃触发的洲了个洲游戏
+                    success, image_path, message = await self.zhou_game.start_new_game(user_id, is_triggered=True)
+                    
+                    print(f"[DEBUG] 偷吃触发洲了个洲游戏 - 用户: {user_id}, 成功: {success}, 图片路径: {image_path}")
+                    
+                    if success and image_path:
+                        # 检查图片文件是否存在
+                        if os.path.exists(image_path):
+                            print(f"[DEBUG] 图片文件存在，准备发送: {image_path}")
+                            yield event.image_result(image_path)
+                            yield event.plain_result(message)
+                        else:
+                            print(f"[DEBUG] 图片文件不存在: {image_path}")
+                            yield event.plain_result(f"游戏启动成功但图片文件缺失: {message}")
+                    else:
+                        print(f"[DEBUG] 游戏启动失败或无图片路径")
+                        yield event.plain_result(message)
+                        
+                except Exception as e:
+                    logger.error(f"启动偷吃触发的洲了个洲游戏时出错: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    yield event.plain_result("🎮 洲了个洲游戏启动失败，请稍后重试")
+            
+            # 清理延迟结果
+            self.touchi_tools._delayed_result = None
 
     @command("鼠鼠图鉴")
     async def tujian(self, event: AstrMessageEvent):
@@ -669,7 +713,7 @@ class Main(Star):
 • 概率: {stats['hunted_escape']}
 • 效果: 正常获得本次物品
 • 惩罚: 只能保留小尺寸物品(1x1,1x2,2x1,1x3,3x1)
-
+• 备注: 删除收藏中的大尺寸物品并重新计算仓库价值
 
 🐭 【路人鼠鼠】
 • 概率: {stats['passerby_mouse']}
@@ -684,3 +728,224 @@ class Main(Star):
         except Exception as e:
             logger.error(f"获取偷吃事件信息时出错: {e}")
             yield event.plain_result("❌ 获取偷吃事件信息失败，请重试")
+    
+    @command("洲了个洲")
+    async def zhou_start_game(self, event: AstrMessageEvent):
+        """开始洲了个洲游戏"""
+        allowed, error_msg = self._check_all_permissions(event)
+        if not allowed:
+            if error_msg:
+                yield event.plain_result(error_msg)
+            return
+        
+        try:
+            group_id = event.get_group_id()
+            user_id = event.get_sender_id()
+            
+            if group_id:
+                # 群聊中使用群组游戏
+                # 检查是否有个人游戏正在进行
+                personal_game_status = await self.zhou_game.get_game_stats(user_id)
+                if personal_game_status and personal_game_status.get('has_active_game'):
+                    yield event.plain_result("❌ 你有个人游戏正在进行中，请先完成或重新开始个人游戏")
+                    return
+                success, image_path, message = await self.zhou_game.start_group_game(group_id, user_id)
+                print(f"[DEBUG] 群聊洲了个洲游戏 - 群组: {group_id}, 用户: {user_id}, 成功: {success}, 图片路径: {image_path}")
+            else:
+                # 私聊中使用个人游戏（主动发送，is_triggered=False）
+                success, image_path, message = await self.zhou_game.start_new_game(user_id, is_triggered=False)
+                print(f"[DEBUG] 主动发送洲了个洲游戏 - 用户: {user_id}, 成功: {success}, 图片路径: {image_path}")
+            
+            if success and image_path:
+                # 检查图片文件是否存在
+                if os.path.exists(image_path):
+                    print(f"[DEBUG] 主动游戏图片文件存在，准备发送: {image_path}")
+                    yield event.image_result(image_path)
+                    yield event.plain_result(message)
+                else:
+                    print(f"[DEBUG] 主动游戏图片文件不存在: {image_path}")
+                    yield event.plain_result(f"游戏启动成功但图片文件缺失: {message}")
+            else:
+                print(f"[DEBUG] 主动游戏启动失败或无图片路径")
+                yield event.plain_result(message)
+                
+        except Exception as e:
+            logger.error(f"开始洲了个洲游戏时出错: {e}")
+            yield event.plain_result("❌ 开始游戏失败，请稍后重试")
+    
+    @command("拿")
+    async def zhou_take_cards(self, event: AstrMessageEvent):
+        """拿取卡牌"""
+        allowed, error_msg = self._check_all_permissions(event)
+        if not allowed:
+            if error_msg:
+                yield event.plain_result(error_msg)
+            return
+        
+        try:
+            plain_text = event.message_str.strip()
+            args = plain_text.split()[1:]  # 去掉"拿"指令本身
+            
+            if not args:
+                yield event.plain_result("❌ 请指定要拿取的卡牌编号\n\n💡 示例:\n• 拿 1 2 3 - 拿取编号为1、2、3的卡牌")
+                return
+            
+            # 解析卡牌编号
+            card_numbers = []
+            for arg in args:
+                try:
+                    num = int(arg)
+                    card_numbers.append(num)
+                except ValueError:
+                    yield event.plain_result(f"❌ 无效的卡牌编号: {arg}")
+                    return
+            
+            group_id = event.get_group_id()
+            user_id = event.get_sender_id()
+            
+            if group_id:
+                # 群聊中使用群组游戏逻辑
+                success, image_path, message = await self.zhou_game.take_group_cards(group_id, user_id, card_numbers)
+            else:
+                # 私聊中使用个人游戏逻辑
+                success, image_path, message = await self.zhou_game.take_cards(user_id, card_numbers)
+            
+            if success and image_path:
+                yield event.image_result(image_path)
+                if message:  # 只有在有消息时才发送文字提示
+                    yield event.plain_result(message)
+            else:
+                if message:  # 确保失败时也有消息
+                    yield event.plain_result(message)
+                
+        except Exception as e:
+            logger.error(f"拿取卡牌时出错: {e}")
+            yield event.plain_result("❌ 拿取卡牌失败，请稍后重试")
+    
+    @command("撤回")
+    async def zhou_undo(self, event: AstrMessageEvent):
+        """使用撤回道具"""
+        allowed, error_msg = self._check_all_permissions(event)
+        if not allowed:
+            if error_msg:
+                yield event.plain_result(error_msg)
+            return
+        
+        try:
+            group_id = event.get_group_id()
+            user_id = event.get_sender_id()
+            
+            if group_id:
+                # 群聊中使用群组游戏逻辑
+                success, image_path, message = await self.zhou_game.use_group_undo(group_id, user_id)
+            else:
+                # 私聊中使用个人游戏逻辑
+                success, image_path, message = await self.zhou_game.use_undo(user_id)
+            
+            if success and image_path:
+                yield event.image_result(image_path)
+                if message:  # 只有在有消息时才发送文字提示
+                    yield event.plain_result(message)
+            else:
+                if message:  # 确保失败时也有消息
+                    yield event.plain_result(message)
+                
+        except Exception as e:
+            logger.error(f"使用撤回道具时出错: {e}")
+            yield event.plain_result("❌ 撤回失败，请稍后重试")
+    
+    @command("洗牌")
+    async def zhou_shuffle(self, event: AstrMessageEvent):
+        """使用洗牌道具"""
+        allowed, error_msg = self._check_all_permissions(event)
+        if not allowed:
+            if error_msg:
+                yield event.plain_result(error_msg)
+            return
+        
+        try:
+            group_id = event.get_group_id()
+            user_id = event.get_sender_id()
+            
+            if group_id:
+                # 群聊中使用群组游戏逻辑
+                success, image_path, message = await self.zhou_game.use_group_shuffle(group_id, user_id)
+            else:
+                # 私聊中使用个人游戏逻辑
+                success, image_path, message = await self.zhou_game.use_shuffle(user_id)
+            
+            if success and image_path:
+                yield event.image_result(image_path)
+                if message:  # 只有在有消息时才发送文字提示
+                    yield event.plain_result(message)
+            else:
+                if message:  # 确保失败时也有消息
+                    yield event.plain_result(message)
+                
+        except Exception as e:
+            logger.error(f"使用洗牌道具时出错: {e}")
+            yield event.plain_result("❌ 洗牌失败，请稍后重试")
+    
+    @command("移出卡槽")
+    async def zhou_remove_slot(self, event: AstrMessageEvent):
+        """使用移出卡槽道具"""
+        allowed, error_msg = self._check_all_permissions(event)
+        if not allowed:
+            if error_msg:
+                yield event.plain_result(error_msg)
+            return
+        
+        try:
+            group_id = event.get_group_id()
+            user_id = event.get_sender_id()
+            
+            if group_id:
+                # 群聊中使用群组游戏逻辑
+                success, image_path, message = await self.zhou_game.use_group_remove_slot(group_id, user_id)
+            else:
+                # 私聊中使用个人游戏逻辑
+                success, image_path, message = await self.zhou_game.use_remove_slot(user_id)
+            
+            if success and image_path:
+                yield event.image_result(image_path)
+                if message:  # 只有在有消息时才发送文字提示
+                    yield event.plain_result(message)
+            else:
+                if message:  # 确保失败时也有消息
+                    yield event.plain_result(message)
+                
+        except Exception as e:
+            logger.error(f"使用移出卡槽道具时出错: {e}")
+            yield event.plain_result("❌ 移出卡槽失败，请稍后重试")
+    
+    @command("洲统计")
+    async def zhou_stats(self, event: AstrMessageEvent):
+        """查看洲了个洲游戏统计"""
+        allowed, error_msg = self._check_all_permissions(event)
+        if not allowed:
+            if error_msg:
+                yield event.plain_result(error_msg)
+            return
+        
+        try:
+            user_id = event.get_sender_id()
+            stats = await self.zhou_game.get_game_stats(user_id)
+            
+            if stats:
+                stats_text = f"""🎮 洲了个洲游戏统计 🎮
+
+👤 玩家: {user_id}
+🎯 游戏场次: {stats['games_played']}
+🏆 获胜场次: {stats['games_won']}
+📊 胜率: {stats['win_rate']:.1f}%
+⭐ 最高分数: {stats['best_score']}
+💯 总分数: {stats['total_score']}
+
+💡 提示: 使用"洲了个洲"开始新游戏！"""
+                yield event.plain_result(stats_text)
+            else:
+                yield event.plain_result("📊 暂无游戏记录\n\n💡 使用\"洲了个洲\"开始你的第一局游戏！")
+                
+        except Exception as e:
+            logger.error(f"获取游戏统计时出错: {e}")
+            yield event.plain_result("❌ 获取统计信息失败，请稍后重试")
