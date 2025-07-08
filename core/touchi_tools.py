@@ -693,13 +693,48 @@ class TouchiTools:
                 if event_triggered and event_message:
                     base_message += f"\n\n{event_message}"
                 
+                # 检查是否触发洲了个洲游戏（2%概率）
+                zhou_triggered = False
+                zhou_message = ""
+                if random.random() < 0.02:  # 2%概率
+                    zhou_triggered = True
+                    zhou_message = "\n\n🎮 特殊事件触发！洲了个洲游戏开始！\n💰 游戏获胜可获得100万哈夫币奖励！\n📝 使用 '洲了个洲' 指令开始游戏"
+                    
+                    # 记录触发事件到数据库（用于后续奖励发放）
+                    try:
+                        async with aiosqlite.connect(self.db_path) as db:
+                            # 创建洲游戏触发记录表（如果不存在）
+                            await db.execute("""
+                                CREATE TABLE IF NOT EXISTS zhou_trigger_events (
+                                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                    user_id TEXT NOT NULL,
+                                    trigger_time INTEGER NOT NULL,
+                                    reward_claimed INTEGER DEFAULT 0
+                                )
+                            """)
+                            
+                            # 记录触发事件
+                            await db.execute(
+                                "INSERT INTO zhou_trigger_events (user_id, trigger_time) VALUES (?, ?)",
+                                (user_id, int(time.time()))
+                            )
+                            await db.commit()
+                    except Exception as e:
+                        logger.error(f"记录洲游戏触发事件时出错: {e}")
+                
+                # 构建最终消息
+                final_message = base_message
+                if zhou_triggered:
+                    final_message += zhou_message
+                
                 # 发送消息和图片 - 后台任务无法使用yield，需要通过其他方式发送
                 # 这里我们将结果保存，让调用方处理发送
                 self._delayed_result = {
                     'success': True,
-                    'message': base_message,
+                    'message': final_message,
                     'image_path': safe_image_path if safe_image_path and os.path.exists(safe_image_path) else None,
-                    'combined': True  # 标记需要合并发送
+                    'combined': True,  # 标记需要合并发送
+                    'zhou_triggered': zhou_triggered  # 标记是否触发了洲游戏
                 }
             else:
                 self._delayed_result = {
@@ -1314,7 +1349,7 @@ class TouchiTools:
                 items_list = json.loads(items_json)
                 
                 if not items_list:
-                    yield event.plain_result("🐭 没有可检视的物品，或没有下载检视资源")
+                    yield event.plain_result("🐭 没有可检视的物品或检视资源没有完整下载")
                     return
                 
                 # 筛选出有对应检视gif的物品
@@ -1331,7 +1366,7 @@ class TouchiTools:
                         })
                 
                 if not jianshi_items:
-                    yield event.plain_result("🐭 最后一次偷吃没有可检视的物品，或没有下载检视资源")
+                    yield event.plain_result("🐭 最后一次偷吃的物品中没有可检视的物品，或检查检视资源是否完整下载")
                     return
                 
                 # 获取当前要检视的物品（按顺序轮流）
@@ -1350,4 +1385,4 @@ class TouchiTools:
                 
         except Exception as e:
             logger.error(f"检视物品时出错: {e}")
-            yield event.plain_result("🐭 检视失败，重试或检查检视资源是否完整")
+            yield event.plain_result("🐭 检视失败，请检查检视资源是否完整下载")
