@@ -10,13 +10,13 @@ from .core.touchi_tools import TouchiTools
 from .core.tujian import TujianTools
 from .core.zhou import ZhouGame
 
-@register("astrbot_plugin_touchi", "touchi", "这是一个为 AstrBot 开发的鼠鼠偷吃插件，增加了图鉴特勤处鼠鼠榜功能", "2.5.1")
+@register("astrbot_plugin_touchi", "touchi", "这是一个为 AstrBot 开发的鼠鼠偷吃插件，增加了图鉴特勤处鼠鼠榜功能", "2.5.2")
 class Main(Star):
     @classmethod
     def info(cls):
         return {
             "name": "astrbot_plugin_touchi",
-            "version": "2.5.1",
+            "version": "2.5.2",
             "description": "这是一个为 AstrBot 开发的鼠鼠偷吃插件，增加了图鉴特勤处刘涛功能",
             "author": "sa1guu"
         }
@@ -43,8 +43,11 @@ class Main(Star):
         self.enable_static_image = self.config.get("enable_static_image", False)
         
         # Define path for the plugin's private database in its data directory
-        # 使用正确的数据库路径
-        data_dir = "C:\\powershell\\AstrBot\\data\\plugin_data\\astrbot_plugin_touchi"
+        # 使用相对路径，避免硬编码绝对路径
+        # 获取AstrBot根目录，然后构建数据目录路径
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        astrbot_root = os.path.dirname(os.path.dirname(os.path.dirname(current_dir)))
+        data_dir = os.path.join(astrbot_root, "data", "plugin_data", "astrbot_plugin_touchi")
         os.makedirs(data_dir, exist_ok=True)
         self.db_path = os.path.join(data_dir, "collection.db")
         
