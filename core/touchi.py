@@ -8,10 +8,12 @@ import os
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
 items_dir = os.path.join(script_dir, "items")
+xinwuzi_dir = os.path.join(script_dir, "xinwuzi")
 expressions_dir = os.path.join(script_dir, "expressions")
 output_dir = os.path.join(script_dir, "output")
 
 os.makedirs(items_dir, exist_ok=True)
+os.makedirs(xinwuzi_dir, exist_ok=True)
 os.makedirs(expressions_dir, exist_ok=True)
 os.makedirs(output_dir, exist_ok=True)
 
@@ -73,12 +75,25 @@ ITEM_VALUES = {
     "red_3x3_banzi": 2111841, "red_3x3_chaosuan": 2003197, "red_3x3_fanyinglu": 2147262,
     "red_3x3_huxiji": 10962096, "red_3x3_tanke": 2113480, "red_3x3_wanjinleiguan": 3646401,
     "red_3x3_zongheng": 3337324, "red_3x4_daopian": 1427562, "red_3x4_ranliao": 1400000,"red_1x1_liangzi":279405,"red_1x1_shuju":257498,"red_1x1_lei":19930867,
-    "red_4x1_huatang": 676493, "red_4x3_cipanzhenlie": 1662799, "red_4x3_dongdidianchi": 1409728,"red_2x2_diantai":996970,"red_3x2_heixiazi":1750900
+    "red_4x1_huatang": 676493, "red_4x3_cipanzhenlie": 1662799, "red_4x3_dongdidianchi": 1409728,"red_2x2_diantai":996970,"red_3x2_heixiazi":1750900,
+    
+    # 新物资 (xinwuzi文件夹)
+    "blue_1x1_chaomian": 12851, "blue_1x1_chazuo": 10438, "blue_1x1_diepian": 11381,
+    "blue_1x1_ewenqiang": 11523, "blue_1x1_jiujing": 8975, "blue_1x1_kachi": 15702,
+    "blue_1x1_mp3": 9711, "blue_1x1_upan": 10000, "blue_1x1_yidongdianyuan": 11589,
+    "blue_1x2_huoyao": 20241, "blue_1x2_tingzhenqi": 16382, "blue_2x1_dianzuan": 32447,
+    "blue_2x2_luju": 45787, "blue_2x2_pozhangchui": 27709, "blue_2x2_xianshiping": 26269,
+    "gold_1x1_bayinhe": 58583, "gold_1x1_cangmitong": 56992, "gold_1x1_duya": 60690,
+    "gold_1x1_haixainzhou": 57636, "gold_1x1_yingyangzhou": 58814, "gold_1x1_zhenzhu": 56039,
+    "gold_1x2_weixingdianhua": 84020, "gold_1x2_xinzangzhijia": 75914, "gold_2x1_jinzhiguiguan": 84762,
+    "gold_2x2_baogao": 434467, "purple_2x1_shengka": 61262, "purple_2x2_kafeizu": 38672,
+    "purple_2x2_luyouqi": 93429, "red_1x1_kexiaoquan": 0, "red_1x1_naojishuju": 1920324,
+    "red_1x1_yuzijiang": 179307, "red_2x3_fuli": 0, "red_3x3_ecmo": 2331756
 }
 
 # 稀有物品列表 - 概率为原来的三分之一
 RARE_ITEMS = {
-    "gold_1x1_1", "gold_1x1_2", "red_1x1_1", "red_1x1_2", "red_1x1_3", 
+    "gold_1x1_1", "gold_1x1_2", "red_1x1_1", "red_1x1_2", "red_1x1_3",  "red_3x3_ecmo",
     "red_3x3_huxiji", "gold_3x2_bendishoushi", "purple_1x1_2", "purple_1x1_4","purple_1x1_3", "purple_1x1_1","red_4x3_cipanzhenlie","red_4x3_dongdidianchi","red_3x4_daopian","red_3x3_wanjinleiguan","red_3x3_tanke"
 }
 
@@ -108,22 +123,38 @@ def load_items():
     items = []
     valid_extensions = ('.png', '.jpg', '.jpeg', '.gif', '.bmp')  # 使用元组提高性能
     
-    try:
-        for filename in os.listdir(items_dir):
+    def process_items_from_dir(directory):
+        """处理指定目录中的物品文件"""
+        if not os.path.exists(directory):
+            return
+            
+        for filename in os.listdir(directory):
             if not filename.lower().endswith(valid_extensions):
                 continue
                 
-            file_path = os.path.join(items_dir, filename)
+            file_path = os.path.join(directory, filename)
             if not os.path.isfile(file_path):
                 continue
                 
             parts = os.path.splitext(filename)[0].split('_')
-            level = parts[0].lower() if len(parts) >= 2 else "purple"
-            size = parts[1] if len(parts) >= 2 else "1x1"
-            width, height = get_size(size)
             
-            # 获取物品基础名称（不含扩展名）
-            item_base_name = os.path.splitext(filename)[0]
+            # 判断是否为新物资格式（等级_大小_名称_价格）
+            if len(parts) >= 4 and parts[-1].isdigit():
+                # 新物资格式：等级_大小_名称_价格
+                level = parts[0].lower()
+                size = parts[1]
+                # 物品名称为除了等级、大小和价格之外的部分
+                name_parts = parts[2:-1]
+                item_name = '_'.join(name_parts)
+                # 构建基础名称（用于查找价值）
+                item_base_name = f"{level}_{size}_{item_name}"
+            else:
+                # 原有格式：等级_大小_名称
+                level = parts[0].lower() if len(parts) >= 2 else "purple"
+                size = parts[1] if len(parts) >= 2 else "1x1"
+                item_base_name = os.path.splitext(filename)[0]
+            
+            width, height = get_size(size)
             item_value = get_item_value(item_base_name)
             
             items.append({
@@ -132,6 +163,14 @@ def load_items():
                 "base_name": item_base_name, "value": item_value,
                 "name": f"{item_base_name} (价值: {item_value:,})"
             })
+    
+    try:
+        # 处理原有items文件夹
+        process_items_from_dir(items_dir)
+        
+        # 处理新的xinwuzi文件夹
+        process_items_from_dir(xinwuzi_dir)
+        
     except Exception as e:
         print(f"Error loading items: {e}")
         return []
