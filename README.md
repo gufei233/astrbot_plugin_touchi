@@ -13,3 +13,6 @@
 将插件文件夹 astrbot_plugin_touchi 放入 AstrBot 的 data/plugins/ 目录
 ![Screenshot_20250623_162718](https://github.com/user-attachments/assets/b2c0cc22-7d12-491e-bbf7-9955da949aa0)
 ![24c0b1fa9c5efec163d7f3b5a8be20d](https://github.com/user-attachments/assets/8719fb3b-2dc9-4608-9ef2-69e78df2c0ec)
+大家还有什么更新建议可以填issues 我都会看
+还有鼠鼠的gif表情包都来自 画师 鲨鱼贩卖机 多平台同名 
+表情包不可用于商业盈利 直播视频中出现 聊天都是可以的
