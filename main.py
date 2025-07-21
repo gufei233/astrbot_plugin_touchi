@@ -10,14 +10,14 @@ from .core.touchi_tools import TouchiTools
 from .core.tujian import TujianTools
 from .core.zhou import ZhouGame
 
-@register("astrbot_plugin_touchi", "touchi", "这是一个为 AstrBot 开发的鼠鼠偷吃插件，增加了图鉴特勤处鼠鼠榜功能", "2.5.3")
+@register("astrbot_plugin_touchi", "touchi", "这是一个为 AstrBot 开发的三角洲鼠鼠偷吃群娱插件，增加了图鉴特勤处鼠鼠榜功能", "2.5.3")
 class Main(Star):
     @classmethod
     def info(cls):
         return {
             "name": "astrbot_plugin_touchi",
             "version": "2.5.3",
-            "description": "这是一个为 AstrBot 开发的鼠鼠偷吃插件，增加了图鉴特勤处刘涛功能",
+            "description": "这是一个为 AstrBot 开发的三角洲鼠鼠偷吃群娱插件，包含图鉴特勤处刘涛等多种功能",
             "author": "sa1guu"
         }
     
