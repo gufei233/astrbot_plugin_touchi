@@ -1,5 +1,5 @@
 name: astrbot_plugin_touchi # 这是你的插件的唯一识别名。
 desc: 这是一个为 AstrBot 开发的三角洲鼠鼠偷吃群娱插件（已上线图鉴 仓库 特勤处 鼠鼠榜） # 插件简短描述
-version: v2.5.3 # 插件版本号。格式：v1.1.1 或者 v1.1
+version: v2.5.4 # 插件版本号。格式：v1.1.1 或者 v1.1
 author: sa1guu # 作者 
 repo: https://github.com/sa1guu/astrbot_plugin_touchi # 插件的仓库地址
