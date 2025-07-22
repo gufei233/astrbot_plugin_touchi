@@ -9,14 +9,15 @@ from astrbot.api.event.filter import command
 from .core.touchi_tools import TouchiTools
 from .core.tujian import TujianTools
 from .core.zhou import ZhouGame
+# from .core.roulette import RouletteTools  # 改为独立调用
 
-@register("astrbot_plugin_touchi", "touchi", "这是一个为 AstrBot 开发的三角洲鼠鼠偷吃群娱插件，增加了图鉴特勤处鼠鼠榜功能", "2.5.3")
+@register("astrbot_plugin_touchi", "touchi", "这是一个为 AstrBot 开发的三角洲鼠鼠偷吃群娱插件，增加了图鉴特勤处鼠鼠榜功能", "2.5.4")
 class Main(Star):
     @classmethod
     def info(cls):
         return {
             "name": "astrbot_plugin_touchi",
-            "version": "2.5.3",
+            "version": "2.5.4",
             "description": "这是一个为 AstrBot 开发的三角洲鼠鼠偷吃群娱插件，包含图鉴特勤处刘涛等多种功能",
             "author": "sa1guu"
         }
@@ -69,6 +70,9 @@ class Main(Star):
         items_dir = os.path.join(os.path.dirname(__file__), "core", "items")
         output_dir = os.path.join(os.path.dirname(__file__), "core", "output")
         self.zhou_game = ZhouGame(self.db_path, items_dir, output_dir)
+        
+        # # 初始化转盘工具 - 改为独立调用
+        # self.roulette_tools = RouletteTools(output_dir)
 
     async def _initialize_database(self):
         """Initializes the database and creates the table if it doesn't exist."""
@@ -512,6 +516,7 @@ class Main(Star):
 • 偷吃 - 开启偷吃盲盒，获得随机物品
 • 鼠鼠图鉴 - 查看你收集的稀有物品图鉴
 • 鼠鼠仓库 - 查看仓库总价值和统计信息
+• 鼠鼠转盘 - 启动六个转盘，随机选择地图、难度、装备和武器
 
 ⚡ 高级功能：
 • 六套猛攻 - 消耗哈夫币进行猛攻模式
@@ -952,3 +957,47 @@ class Main(Star):
         except Exception as e:
             logger.error(f"获取游戏统计时出错: {e}")
             yield event.plain_result("❌ 获取统计信息失败，请稍后重试")
+    
+    @command("鼠鼠转盘")
+    async def roulette_spin(self, event: AstrMessageEvent):
+        """启动鼠鼠转盘游戏 - 独立版本"""
+        allowed, error_msg = self._check_all_permissions(event)
+        if not allowed:
+            if error_msg:
+                yield event.plain_result(error_msg)
+            return
+        
+        try:
+            # 导入并执行独立转盘文件
+            try:
+                from .roulette_standalone import generate_roulette
+                
+                # 生成转盘
+                result = generate_roulette()
+                
+                if result["success"]:
+                    # 发送GIF
+                    gif_path = result["gif_path"]
+                    if os.path.exists(gif_path):
+                        yield event.image_result(gif_path)
+                        
+                        # 成功发送后删除GIF
+                        try:
+                            os.remove(gif_path)
+                            logger.info(f"已删除转盘GIF: {gif_path}")
+                        except Exception as e:
+                            logger.warning(f"删除GIF文件失败: {e}")
+                    else:
+                        yield event.plain_result("❌ 转盘GIF文件未找到")
+                else:
+                    yield event.plain_result(result["message"])
+                    
+            except ImportError as e:
+                if "PIL" in str(e) or "Pillow" in str(e):
+                    yield event.plain_result("❌ 转盘功能需要安装PIL依赖\n请运行: pip install Pillow>=8.0.0")
+                else:
+                    yield event.plain_result(f"❌ 转盘功能导入失败: {str(e)}")
+                    
+        except Exception as e:
+            logger.error(f"鼠鼠转盘生成失败: {e}")
+            yield event.plain_result("❌ 鼠鼠转盘启动失败，请稍后重试")
