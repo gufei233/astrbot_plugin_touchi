@@ -38,7 +38,7 @@ class TouchiTools:
         
         self.safe_box_messages = [
             ("鼠鼠偷吃中...(预计{}min)", ["touchi1.gif", "touchi2.gif", "touchi3.gif", "touchi4.gif"], 120),
-            ("鼠鼠猛攻中...(预计{}min)", "menggong.gif", 60)
+            ("鼠鼠猛攻中...(预计{}min)", ["menggong.gif", "menggong2.gif", "menggong3.gif"], 60)
         ]
         
         self.character_names = ["威龙", "老黑", "蜂医", "红狼", "乌鲁鲁", "深蓝", "无名"]
@@ -802,12 +802,12 @@ class TouchiTools:
                 duration_text = f"{duration_minutes}分钟"
             base_message = f"🔥 六套猛攻激活！{duration_text}内提高红色和金色物品概率，不出现蓝色物品！\n消耗哈夫币: 3,000,000"
             
-            # 发送猛攻gif图片
-            menggong_image_path = os.path.join(self.biaoqing_dir, "menggong.gif")
-            if os.path.exists(menggong_image_path):
+            # 发送猛攻激活专用gif图片
+            menggongzhong_image_path = os.path.join(self.biaoqing_dir, "menggongzhong.gif")
+            if os.path.exists(menggongzhong_image_path):
                 chain = [
                     Plain(base_message),
-                    Image.fromFileSystem(menggong_image_path)
+                    Image.fromFileSystem(menggongzhong_image_path)
                 ]
                 yield event.chain_result(chain)
             else:
