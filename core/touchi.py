@@ -352,8 +352,13 @@ def create_safe_layout(items, menggong_mode=False, grid_size=2, auto_mode=False,
     placed_items = place_items(selected_items, region_width, region_height, grid_size)
     return placed_items, 0, 0, region_width, region_height
 
-def render_safe_layout_gif(placed_items, start_x, start_y, region_width, region_height, grid_size=2, cell_size=100):
-    """生成GIF动画，物品按顺序逐个显示，带转圈动画效果"""
+def render_safe_layout_gif(placed_items, start_x, start_y, region_width, region_height,
+                           grid_size=2, cell_size=100):
+    """
+    返回:
+        frames: List[PIL.Image]  # 每一帧
+        total_frames: int        # 总帧数（== len(frames)）
+    """
     img_size = grid_size * cell_size
     frames = []
     
@@ -767,7 +772,7 @@ def render_safe_layout_gif(placed_items, start_x, start_y, region_width, region_
         frame_img = Image.alpha_composite(safe_img.convert("RGBA"), overlay).convert("RGB")
         frames.append(frame_img)
     
-    return frames
+    return frames, len(frames)
 
 def get_highest_level(placed_items):
     if not placed_items: return "purple"
@@ -792,10 +797,11 @@ def cleanup_old_gifs(keep_recent=2):
     except Exception as e:
         print(f"Error cleaning up old GIFs: {e}")
 
-def generate_safe_image(menggong_mode=False, grid_size=2, time_multiplier=1.0, gif_scale=0.7, optimize_size=False, enable_static_image=False):
+def generate_safe_image(menggong_mode=False, grid_size=2, time_multiplier=1.0,
+                        gif_scale=0.7, optimize_size=False, enable_static_image=False):
     """
     Generate a safe GIF animation and return the image path and list of placed items.
-    
+
     Args:
         menggong_mode (bool): Whether to use menggong mode
         grid_size (int): Size of the grid
@@ -803,157 +809,107 @@ def generate_safe_image(menggong_mode=False, grid_size=2, time_multiplier=1.0, g
         gif_scale (float): Scale factor for the final GIF size (1.0 = original size, 0.5 = half size, 2.0 = double size)
         optimize_size (bool): Whether to optimize GIF file size (reduces colors and enables compression, may affect quality)
         enable_static_image (bool): Whether to generate static image (only last frame) instead of GIF animation
-    
+
     Returns:
         tuple: (output_path, placed_items)
     """
     items = load_items()
     expressions = load_expressions()
-    
+
     if not items or not expressions:
         print("Error: Missing image resources in items or expressions folders.")
         return None, []
-    
-    placed_items, start_x, start_y, region_width, region_height = create_safe_layout(items, menggong_mode, grid_size, auto_mode=False, time_multiplier=time_multiplier)
-    safe_frames = render_safe_layout_gif(placed_items, start_x, start_y, region_width, region_height, grid_size)
+
+    placed_items, start_x, start_y, region_width, region_height = create_safe_layout(
+        items, menggong_mode, grid_size, auto_mode=False, time_multiplier=time_multiplier
+    )
+
+    # ============ ① 一体化写法：直接拿帧序列 + 总帧数 ============
+    safe_frames, total_frames = render_safe_layout_gif(
+        placed_items, start_x, start_y, region_width, region_height, grid_size
+    )
+
     highest_level = get_highest_level(placed_items)
-    
-    # 计算总价值
     total_value = sum(placed["item"]["value"] for placed in placed_items)
-    
-    # 检查是否有金色物品
     has_gold_items = any(placed["item"]["level"] == "gold" for placed in placed_items)
-    
-    # 计算动画完成的帧数（所有物品显示完成的时间点）
-    frames_per_item = 8  # 与render_safe_layout_gif中的值保持一致
-    
-    # 使用与render_safe_layout_gif中相同的转圈时长计算逻辑
-    duration_map = {
-        "blue": 4,    # 蓝色最短
-        "purple": 6,  # 紫色稍长
-        "gold": 10,    # 金色更长
-        "red": 25     # 红色最长
-    }
-    
-    # 计算最长转圈时长
-    max_rotation_duration = max([duration_map.get(placed["item"]["level"], 6) for placed in placed_items], default=8)
-    min_frames_needed = len(placed_items) * frames_per_item + max_rotation_duration
-    animation_complete_frame = min_frames_needed + 5  # 延后5帧显示最终表情
-    
-    # 加载eating.gif和最终表情图片
-    eating_path = expressions.get("eating")
+
+    # 静态图终点：最后一帧（留 5 帧缓冲可自己调）
+    static_frame_index = max(0, total_frames - 1 - 5) if total_frames > 5 else total_frames - 1
+
+    # 表情选择逻辑
     expression_map = {"gold": "happy", "red": "eat"}
-    
-    # 表情选择逻辑：优先级为红色>金色>高价值无金色>其他
     if highest_level == "red":
         final_expression = "eat"
     elif highest_level == "gold":
         final_expression = "happy"
     elif total_value > 300000 and not has_gold_items:
-        final_expression = "happy"  # 价值大于300000且没有金色物品时使用happy
+        final_expression = "happy"
     else:
         final_expression = "cry"
-    
+
+    eating_path = expressions.get("eating")
     final_expr_path = expressions.get(final_expression)
-    
     if not eating_path or not final_expr_path:
         return None, []
-    
+
     try:
-        # 计算表情图片的目标尺寸，使其与保险箱格子边长对齐
-        # 使用grid_size * cell_size作为表情图片的尺寸，确保与格子线对齐
-        expression_size = grid_size * 100  # cell_size默认为100
-        
-        # 加载eating.gif的所有帧，强制调整为统一尺寸
+        expression_size = grid_size * 100          # 与格子对齐
+        # 预加载 eating.gif 所有帧
         eating_frames = []
         with Image.open(eating_path) as eating_gif:
-            for frame_idx in range(eating_gif.n_frames):
-                eating_gif.seek(frame_idx)
-                eating_frame = eating_gif.convert("RGBA")
-                # 强制调整为精确的expression_size尺寸，保持居中
-                eating_frame = eating_frame.resize((expression_size, expression_size), Image.LANCZOS)
-                eating_frames.append(eating_frame.copy())
-        
-        # 加载最终表情图片，强制调整为统一尺寸
+            for idx in range(eating_gif.n_frames):
+                eating_gif.seek(idx)
+                frame = eating_gif.convert("RGBA").resize((expression_size, expression_size), Image.LANCZOS)
+                eating_frames.append(frame.copy())
+
+        # 加载最终表情
         with Image.open(final_expr_path).convert("RGBA") as final_expr_img:
-            # 强制调整为精确的expression_size尺寸，保持居中
             final_expr_img = final_expr_img.resize((expression_size, expression_size), Image.LANCZOS)
-            
-            # 为每一帧添加表情图片
+
+            # 合成每一帧
             final_frames = []
-            for frame_idx, safe_frame in enumerate(safe_frames):
-                # 创建最终图像，使用expression_size作为左侧宽度，确保对齐
-                final_img = Image.new("RGB", (expression_size + safe_frame.width, safe_frame.height), (50, 50, 50))
-                
-                # 选择表情图片：第一帧显示最终表情，从第二帧开始显示eating.gif
-                if frame_idx == 0:
-                    # 第一帧显示最终表情
-                    current_expr = final_expr_img
+            for idx, safe_frame in enumerate(safe_frames):
+                canvas = Image.new("RGB", (expression_size + safe_frame.width, safe_frame.height), (50, 50, 50))
+                # 第一帧放最终表情，其余放 eating 循环
+                expr = final_expr_img if idx == 0 else eating_frames[(idx - 1) % len(eating_frames)]
+                if expr.mode == 'RGBA':
+                    canvas.paste(expr, (0, 0), expr)
                 else:
-                    # 从第二帧开始显示eating.gif的循环帧
-                    eating_frame_idx = (frame_idx - 1) % len(eating_frames)
-                    current_expr = eating_frames[eating_frame_idx]
-                
-                # 由于表情图片已强制调整为expression_size，直接放置在左上角
-                # 处理表情图片的透明通道
-                if current_expr.mode == 'RGBA':
-                    # 直接粘贴RGBA图片，保持透明效果
-                    final_img.paste(current_expr, (0, 0), current_expr)
-                else:
-                    final_img.paste(current_expr, (0, 0))
-                
-                # 添加保险箱帧，确保右侧紧贴表情图片
-                final_img.paste(safe_frame, (expression_size, 0))
-                
-                # 应用缩放
+                    canvas.paste(expr, (0, 0))
+                canvas.paste(safe_frame, (expression_size, 0))
+
                 if gif_scale != 1.0:
-                    new_width = int(final_img.width * gif_scale)
-                    new_height = int(final_img.height * gif_scale)
-                    final_img = final_img.resize((new_width, new_height), Image.LANCZOS)
-                
-                # 如果启用了大小优化，转换为P模式以减少颜色数量
+                    new_size = (int(canvas.width * gif_scale), int(canvas.height * gif_scale))
+                    canvas = canvas.resize(new_size, Image.LANCZOS)
                 if optimize_size:
-                    # 转换为P模式（调色板模式）以减少文件大小
-                    final_img = final_img.convert('P', palette=Image.ADAPTIVE, colors=128)
-                
-                final_frames.append(final_img)
-                
+                    canvas = canvas.convert('P', palette=Image.ADAPTIVE, colors=128)
+                final_frames.append(canvas)
+
     except Exception as e:
         print(f"Error creating final GIF: {e}")
         return None, []
 
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    
-    # 根据静态图片模式选择输出格式和路径
+
+    # ================= ② 静态 PNG 分支 =================
     if enable_static_image:
-        # 静态图片模式：生成静态图片（显示最终表情+所有物品显示完毕的状态）
         output_path = os.path.join(output_dir, f"safe_{timestamp}.png")
-        if final_frames:
-            # 为静态图片创建特殊帧：左侧显示最终表情，右侧显示所有物品完成的保险箱
-            static_frame_index = min(animation_complete_frame, len(final_frames) - 1)
-            safe_frame = safe_frames[static_frame_index]
-            
-            # 创建静态图像，使用expression_size确保对齐
-            static_img = Image.new("RGB", (expression_size + safe_frame.width, safe_frame.height), (50, 50, 50))
-            
-            # 由于表情图片已强制调整为expression_size，直接放置在左上角
-            # 左侧始终显示最终表情（不是eating.gif）
-            if final_expr_img.mode == 'RGBA':
-                static_img.paste(final_expr_img, (0, 0), final_expr_img)
-            else:
-                static_img.paste(final_expr_img, (0, 0))
-            
-            # 右侧显示所有物品显示完毕的保险箱，确保紧贴表情图片
-            static_img.paste(safe_frame, (expression_size, 0))
-            
-            # 应用缩放
-            if gif_scale != 1.0:
-                new_width = int(static_img.width * gif_scale)
-                new_height = int(static_img.height * gif_scale)
-                static_img = static_img.resize((new_width, new_height), Image.LANCZOS)
-            
-            static_img.save(output_path, 'PNG')
-        cleanup_old_images()  # 清理旧的PNG文件
+        safe_frame = safe_frames[static_frame_index]          # 用计算好的终点帧
+        static_img = Image.new("RGB", (expression_size + safe_frame.width, safe_frame.height), (50, 50, 50))
+        if final_expr_img.mode == 'RGBA':
+            static_img.paste(final_expr_img, (0, 0), final_expr_img)
+        else:
+            static_img.paste(final_expr_img, (0, 0))
+        static_img.paste(safe_frame, (expression_size, 0))
+
+        if gif_scale != 1.0:
+            new_size = (int(static_img.width * gif_scale), int(static_img.height * gif_scale))
+            static_img = static_img.resize(new_size, Image.LANCZOS)
+        static_img.save(output_path, 'PNG')
+        cleanup_old_images()          # 清理旧 PNG
+        return output_path, placed_items
+
+    # ================= ③ GIF 分支
     else:
         # GIF动画模式
         output_path = os.path.join(output_dir, f"safe_{timestamp}.gif")
