@@ -1,4 +1,4 @@
-✨ **AstrBot 鼠鼠偷吃插件** ✨  
+#✨ **AstrBot 鼠鼠偷吃插件** ✨  
 *astrbot_plugin_touchi* —— 群娱插件 把三角洲开箱做成一款小游戏！
 
 ---
