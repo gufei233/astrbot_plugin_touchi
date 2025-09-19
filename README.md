@@ -1,4 +1,8 @@
-#✨ **AstrBot 鼠鼠偷吃插件** ✨  
+<div align="center">
+
+# <b><font size="7">✨ AstrBot 鼠鼠偷吃插件 ✨</font></b>
+
+</div>
 *astrbot_plugin_touchi* —— 群娱插件 把三角洲开箱做成一款小游戏！
 
 ---
