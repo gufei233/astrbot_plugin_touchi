@@ -263,10 +263,10 @@ class TouchiTools:
         rand_num = random.random()
         # ---------- 判断是否处于“六套猛攻”状态 ----------
         current_ts = int(time.time())
-         menggong_active = (
+        menggong_active = (
              economy_data and economy_data["menggong_active"]
              and current_ts < economy_data["menggong_end_time"]
-         )
+        )
         
         if self.enable_beauty_pic and rand_num < 0.3: 
             async with self.semaphore:
