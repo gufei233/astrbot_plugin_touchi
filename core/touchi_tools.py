@@ -338,36 +338,35 @@ class TouchiTools:
             await task
             
             # 检查是否有延迟结果需要发送
-            if hasattr(self, '_delayed_result') and self._delayed_result:
+            if getattr(self, '_delayed_result', None):
                 result = self._delayed_result
                 self._delayed_result = None  # 清除结果
                 
                 if result['success']:
-                    if result['image_path']:
-                        chain = [
-                            At(qq=event.get_sender_id()),
-                            Plain(f"{result['message']}"),
-                            Image.fromFileSystem(result['image_path']),
-                        ]
-                    if result['emoji_path']:
-                        chain = [
-                            At(qq=event.get_sender_id()),
-                            Plain(f"{result['message']}"),
-                            Image.fromFileSystem(result['emoji_path']),
-                        ]
-                        yield event.chain_result(chain)
-                    else:
-                        chain = [
-                            At(qq=event.get_sender_id()),
-                            Plain(result['message'])
-                        ]
-                        yield event.chain_result(chain)
-                else:
+                    
                     chain = [
                         At(qq=event.get_sender_id()),
-                        Plain(result['message'])
+                        Plain(f"{result['message']}"),
                     ]
+                    # 先加保险箱大图
+                    img_path = result.get('image_path')
+                    if img_path and os.path.exists(img_path):
+                        chain.append(Image.fromFileSystem(img_path))
+                    else:
+                        logger.warn(f"保险箱图片缺失或路径错误: {img_path}")
+                    # 再加事件表情
+                    emoji_path = result.get('emoji_path')
+                    if emoji_path and os.path.exists(emoji_path):
+                        chain.append(Image.fromFileSystem(emoji_path))
+
                     yield event.chain_result(chain)
+                else:
+                    # 失败分支
+                    yield event.chain_result([
+                        At(qq=event.get_sender_id()),
+                        Plain(result['message'])
+                    ])
+                        
 
     async def send_delayed_safe_box(self, event, wait_time, user_id=None, menggong_mode=False, time_multiplier=1.0):
         """异步生成保险箱图片，发送并记录到数据库"""
@@ -747,7 +746,7 @@ class TouchiTools:
                 self._delayed_result = {
                     'success': True,
                     'message': final_message,
-                    'image_path': safe_image_path if safe_image_path and os.path.exists(safe_image_path) else None,
+                    'image_path': os.path.abspath(safe_image_path) if safe_image_path else None,
                     'emoji_path': emoji_path if emoji_path and os.path.exists(emoji_path) else None,
                     'combined': True,  # 标记需要合并发送
                     'zhou_triggered': zhou_triggered  # 标记是否触发了洲游戏
