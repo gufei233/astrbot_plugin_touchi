@@ -261,6 +261,12 @@ class TouchiTools:
                 del self.waiting_users[user_id]
         
         rand_num = random.random()
+        # ---------- 判断是否处于“六套猛攻”状态 ----------
+        current_ts = int(time.time())
+         menggong_active = (
+             economy_data and economy_data["menggong_active"]
+             and current_ts < economy_data["menggong_end_time"]
+         )
         
         if self.enable_beauty_pic and rand_num < 0.3: 
             async with self.semaphore:
@@ -281,7 +287,10 @@ class TouchiTools:
                 except Exception as e:
                     yield event.plain_result(f"获取美图时发生错误: {e}")
         else:
-            message_template, image_name, original_wait_time = random.choice(self.safe_box_messages)
+            if menggong_active:
+                message_template, image_name, original_wait_time = self.safe_box_messages[1]  # 猛攻
+            else:
+                message_template, image_name, original_wait_time = self.safe_box_messages[0]  # 偷吃
             
             # 添加0.6-1.4倍的时间波动
             time_multiplier = random.uniform(0.6, 1.4)
