@@ -340,6 +340,12 @@ class TouchiTools:
                             Plain(f"{result['message']}"),
                             Image.fromFileSystem(result['image_path']),
                         ]
+                    if result['emoji_path']:
+                        chain = [
+                            At(qq=event.get_sender_id()),
+                            Plain(f"{result['message']}"),
+                            Image.fromFileSystem(result['emoji_path']),
+                        ]
                         yield event.chain_result(chain)
                     else:
                         chain = [
@@ -394,7 +400,7 @@ class TouchiTools:
                 )) for item in placed_items)
                 
                 # 检查概率事件
-                event_triggered, event_type, final_items, final_value, event_message, cooldown_multiplier, golden_item_path = await self.events.check_random_events(
+                event_triggered, event_type, final_items, final_value, event_message, cooldown_multiplier, golden_item_path, emoji_path = await self.events.check_random_events(
                     event, user_id, placed_items, total_value
                 )
                 
@@ -733,6 +739,7 @@ class TouchiTools:
                     'success': True,
                     'message': final_message,
                     'image_path': safe_image_path if safe_image_path and os.path.exists(safe_image_path) else None,
+                    'emoji_path': emoji_path if emoji_path and os.path.exists(emoji_path) else None,
                     'combined': True,  # 标记需要合并发送
                     'zhou_triggered': zhou_triggered  # 标记是否触发了洲游戏
                 }
