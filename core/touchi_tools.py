@@ -456,7 +456,7 @@ class TouchiTools:
                         placed_items_new = place_items(specific_items, used_grid_size, used_grid_size, used_grid_size)
                         
                         # 生成图片
-                        safe_frames = render_safe_layout_gif(placed_items_new, 0, 0, used_grid_size, used_grid_size, used_grid_size)
+                        safe_frames, _ = render_safe_layout_gif(placed_items_new, 0, 0, used_grid_size, used_grid_size, used_grid_size)
                         if not safe_frames:
                             return None, []
                         
@@ -585,7 +585,7 @@ class TouchiTools:
                         placed_items_new = place_items(specific_items, 7, 7, 7)
                         
                         # 生成图片
-                        safe_frames = render_safe_layout_gif(placed_items_new, 0, 0, 7, 7, 7)
+                        safe_frames, _ = render_safe_layout_gif(placed_items_new, 0, 0, 7, 7, 7)
                         if not safe_frames:
                             return None, []
                         
