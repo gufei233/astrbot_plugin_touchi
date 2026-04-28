@@ -856,12 +856,20 @@ class TouchiTools:
                         final_value += item_value
 
                 # Persist the event outcome exactly once.
+                settled_value = final_value
+                chixiao_loot_value = 0
+                chixiao_reward_value = 0
                 if event_type == "genius_fine":
                     await self.add_items_to_collection_without_value_update(user_id, final_items)
                 elif event_type == "genius_kick":
                     pass
                 elif event_type == "chixiao_battle":
-                    await self._add_warehouse_value(user_id, final_value)
+                    chixiao_reward_value = final_value
+                    if chixiao_reward_value > 0:
+                        chixiao_loot_value = total_value
+                        await self.add_items_to_collection(user_id, placed_items)
+                        await self._add_warehouse_value(user_id, chixiao_reward_value)
+                    settled_value = chixiao_loot_value + chixiao_reward_value
                 else:
                     await self.add_items_to_collection(user_id, final_items)
 
@@ -875,6 +883,14 @@ class TouchiTools:
 
 
                 # 检查是否触发洲了个洲游戏
+                if event_type == "chixiao_battle" and chixiao_reward_value > 0:
+                    base_message = (
+                        f"{message}\n"
+                        f"\u672c\u6b21\u7269\u54c1\u4ef7\u503c: {chixiao_loot_value:,}\n"
+                        f"\u8d64\u9704\u5956\u52b1: {chixiao_reward_value:,}\n"
+                        f"\u603b\u4ef7\u503c: {settled_value:,}"
+                    )
+
                 zhou_triggered = False
                 zhou_message = ""
                 if random.random() < 0.02:  # 2%概率
