@@ -381,6 +381,13 @@ class TouchiTools:
             logger.warning(f"用户 {user_id} 的自动偷吃状态存在但后台任务不存在，已自动清理")
 
         # 检查用户是否在等待状态
+        current_unix_time = int(time.time())
+        menggong_active_at_start = bool(
+            economy_data
+            and economy_data["menggong_active"]
+            and current_unix_time < economy_data["menggong_end_time"]
+        )
+
         if user_id in self.waiting_users:
             end_time = self.waiting_users[user_id]
             remaining_time = end_time - now
@@ -398,7 +405,7 @@ class TouchiTools:
 
         rand_num = random.random()
 
-        if self.enable_beauty_pic and rand_num < 0.3:
+        if self.enable_beauty_pic and not menggong_active_at_start and rand_num < 0.3:
             async with self.semaphore:
                 try:
                     data = await self.fetch_touchi()
@@ -417,7 +424,23 @@ class TouchiTools:
                 except Exception as e:
                     yield event.plain_result(f"获取美图时发生错误: {e}")
         else:
-            message_template, image_name, original_wait_time = random.choice(self.safe_box_messages)
+            safe_box_messages = self.safe_box_messages
+            if menggong_active_at_start:
+                menggong_messages = [
+                    safe_box_message for safe_box_message in self.safe_box_messages
+                    if any(
+                        "menggong" in image_name
+                        for image_name in (
+                            safe_box_message[1]
+                            if isinstance(safe_box_message[1], list)
+                            else [safe_box_message[1]]
+                        )
+                    )
+                ]
+                if menggong_messages:
+                    safe_box_messages = menggong_messages
+
+            message_template, image_name, original_wait_time = random.choice(safe_box_messages)
 
             # 添加0.6-1.4倍的时间波动
             time_multiplier = random.uniform(0.6, 1.4)
@@ -460,7 +483,11 @@ class TouchiTools:
             self.waiting_users[user_id] = now + actual_wait_time
 
             result, delayed_event_message = await self.send_delayed_safe_box(
-                event, actual_wait_time, user_id, time_multiplier=time_multiplier
+                event,
+                actual_wait_time,
+                user_id,
+                menggong_mode=menggong_active_at_start,
+                time_multiplier=time_multiplier
             )
             if result:
 
