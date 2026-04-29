@@ -7,6 +7,7 @@ import time
 import httpx
 import aiosqlite  # Import the standard SQLite library
 from astrbot.api.message_components import At, Plain, Image
+from astrbot.api.event import MessageChain
 from astrbot.api import logger
 
 from .touchi import generate_safe_image, get_item_value
@@ -738,7 +739,8 @@ class TouchiTools:
                         }
                     }
                     # 将金色物品添加到final_items开头
-                    final_items.insert(0, golden_item)
+                    original_placed_items = list(placed_items)
+                    final_items = [golden_item] + list(final_items or [])
 
                     # 使用最大格子重新生成图片，创建一个特殊的生成函数
                     def generate_with_specific_items():
@@ -762,7 +764,7 @@ class TouchiTools:
                                 break
 
                         # 添加其他已放置的物品
-                        for placed_item in placed_items:
+                        for placed_item in original_placed_items:
                             item_name = placed_item["item"]["base_name"]
                             item_level = placed_item["item"]["level"]
                             for item in all_items:
@@ -1419,6 +1421,9 @@ class TouchiTools:
             # 初始化自动偷吃数据
             self.auto_touchi_data[user_id] = {
                 "red_items_count": 0,
+                "total_items_count": 0,
+                "total_value": 0,
+                "touchi_count": 0,
                 "start_time": current_time
             }
 
@@ -1452,7 +1457,10 @@ class TouchiTools:
                 return
 
             result_text = await self._stop_auto_touchi_internal(user_id)
-            yield event.plain_result(result_text)
+            yield event.chain_result([
+                At(qq=user_id),
+                Plain(f"\n{result_text}")
+            ])
 
         except Exception as e:
             logger.error(f"关闭自动偷吃时出错: {e}")
@@ -1478,6 +1486,9 @@ class TouchiTools:
             # 统计结果
             auto_data = self.auto_touchi_data.get(user_id, {})
             red_count = auto_data.get("red_items_count", 0)
+            total_items_count = auto_data.get("total_items_count", 0)
+            total_value = auto_data.get("total_value", 0)
+            touchi_count = auto_data.get("touchi_count", 0)
             start_time = auto_data.get("start_time", int(time.time()))
             duration = int(time.time()) - start_time
 
@@ -1486,6 +1497,9 @@ class TouchiTools:
                 del self.auto_touchi_data[user_id]
 
             result_text = (
+                f"\u81ea\u52a8\u5077\u5403\u6b21\u6570: {touchi_count}\n"
+                f"\u672c\u6b21\u81ea\u52a8\u5077\u5403\u7269\u54c1\u603b\u6570: {total_items_count}\n"
+                f"\u672c\u6b21\u81ea\u52a8\u5077\u5403\u603b\u6536\u76ca: {total_value:,}\n"
                 f"🛑 自动偷吃已关闭\n"
                 f"⏱️ 运行时长: {duration // 60}分{duration % 60}秒\n"
                 f"🔴 获得红色物品数量: {red_count}个"
@@ -1509,7 +1523,8 @@ class TouchiTools:
                 # 检查是否超过4小时
                 if time.time() - start_time >= max_duration:
                     logger.info(f"用户 {user_id} 的自动偷吃已运行4小时，自动停止")
-                    await self._stop_auto_touchi_internal(user_id)
+                    result_text = await self._stop_auto_touchi_internal(user_id)
+                    await self._send_auto_touchi_summary(event, user_id, result_text)
                     # 注意：这里不能发送消息，因为这是后台任务
                     break
 
@@ -1530,6 +1545,15 @@ class TouchiTools:
         finally:
             if self.auto_touchi_tasks.get(user_id) is asyncio.current_task():
                 self.auto_touchi_tasks.pop(user_id, None)
+
+    async def _send_auto_touchi_summary(self, event, user_id, result_text):
+        try:
+            await event.send(MessageChain([
+                At(qq=user_id),
+                Plain(f"\n{result_text}")
+            ]))
+        except Exception as e:
+            logger.error(f"Failed to send auto touchi summary: {e}")
 
     async def _perform_auto_touchi(self, user_id, economy_data):
         """执行一次自动偷吃"""
@@ -1556,8 +1580,18 @@ class TouchiTools:
 
                 # 统计红色物品
                 red_items = [item for item in placed_items if item["item"]["level"] == "red"]
+                total_value = sum(
+                    item["item"].get("value", get_item_value(
+                        os.path.splitext(os.path.basename(item["item"]["path"]))[0]
+                    ))
+                    for item in placed_items
+                )
                 if user_id in self.auto_touchi_data:
-                    self.auto_touchi_data[user_id]["red_items_count"] += len(red_items)
+                    auto_stats = self.auto_touchi_data[user_id]
+                    auto_stats["red_items_count"] = auto_stats.get("red_items_count", 0) + len(red_items)
+                    auto_stats["total_items_count"] = auto_stats.get("total_items_count", 0) + len(placed_items)
+                    auto_stats["total_value"] = auto_stats.get("total_value", 0) + total_value
+                    auto_stats["touchi_count"] = auto_stats.get("touchi_count", 0) + 1
 
                 logger.info(f"用户 {user_id} 自动偷吃获得 {len(placed_items)} 个物品，其中红色 {len(red_items)} 个")
 
